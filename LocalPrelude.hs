@@ -16,6 +16,8 @@ module LocalPrelude
     , fromRational
     , toRational
 
+    , Show (..)
+
     , (++)
     , ($)
     , (.)
