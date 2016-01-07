@@ -81,11 +81,11 @@ instance Topology Bool where
 
 instance Topology Float where
     type Neighborhood Float = NonNegative Rational
-    isNeighbor a1 (a2,NonNegative n) = toRational (P.abs (a1 P.- a2)) P.<= n
+    isNeighbor a1 (a2,NonNegative n) = (toRational (P.abs (a1 P.- a2)) <= n) (NonNegative 0)
 
 instance Topology Rational where
     type Neighborhood Rational = NonNegative Rational
-    isNeighbor a1 (a2,NonNegative n) = P.abs (a1 P.- a2) P.<= n
+    isNeighbor a1 (a2,NonNegative n) = (P.abs (a1 P.- a2) <= n) (NonNegative 0)
 
 --------------------
 
