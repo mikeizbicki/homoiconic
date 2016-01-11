@@ -41,8 +41,11 @@ class
     ) => Topology a
         where
 
+    {-# MINIMAL (==) | isNeighbor #-}
+
     type Neighborhood a
     isNeighbor :: a -> a -> Logic a
+    isNeighbor = (==)
 
     infixr 4 ==
     (==) :: a -> a -> Logic a
@@ -68,29 +71,25 @@ class
     (>) :: Lattice a => a -> a -> Logic a
     (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
 
---------------------
-
-type OpenSet x = (x, Neighborhood x)
-
-newtype Borel x = Borel [OpenSet x]
-
--- NOTE: Borel sets can't be represented using this system
--- because we can't take the intersection of two open sets
-
-----------------------------------------
+law_Topology_inf ::
+    Topology a => a -> a -> Community (Neighborhood a) -> Community (Neighborhood a) -> Bool
+law_Topology_inf a1 a2 c1 c2
+    = isNeighbor a1 a2 (c1 && c2)
+    ==> ( isNeighbor a1 a2 c1
+       || isNeighbor a1 a2 c2
+        )
 
 instance Topology Float where
-    type Neighborhood Float = Discrete (NonNegative Rational)
-    isNeighbor a1 a2 NNil = a1 P.== a2
-    isNeighbor a1 a2 (r `NCons` n) = ((Discrete $ NonNegative $ toRational $ P.abs $ a1 P.- a2) <= r) n
+    type Neighborhood Float = Discrete (NonNegative Float)
+    isNeighbor = fromMetric_isNeighbor
 
 instance Topology Rational where
     type Neighborhood Rational = Discrete (NonNegative Rational)
-    isNeighbor a1 a2 (Discrete (NonNegative r) `NCons` n) = ((P.abs $ a1 P.- a2) P.<= r)
+    isNeighbor = fromMetric_isNeighbor
 
 instance Topology Integer where
     type Neighborhood Integer = Discrete (NonNegative Integer)
-    isNeighbor a1 a2 (Discrete (NonNegative i) `NCons` n) = ((P.abs $ a1 P.- a2) P.<= i)
+    isNeighbor = fromMetric_isNeighbor
 
 instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
@@ -100,7 +99,31 @@ instance Topology a => Topology (NonNegative a) where
     type Neighborhood (NonNegative a) = Neighborhood a
     isNeighbor (NonNegative a1) (NonNegative a2) = isNeighbor a1 a2
 
---------------------
+----------------------------------------
+
+class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a where
+    type Scalar a
+    distance :: a -> a -> Scalar a
+
+fromMetric_isNeighbor ::
+    ( Neighborhood a~Discrete (NonNegative (Scalar a))
+    , Metric a
+    ) => a -> a -> Logic a
+fromMetric_isNeighbor a1 a2 (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
+
+instance Metric Float where
+    type Scalar Float = Float
+    distance a1 a2 = P.abs $ a1 P.- a2
+
+instance Metric Rational where
+    type Scalar Rational = Rational
+    distance a1 a2 = P.abs $ a1 P.- a2
+
+instance Metric Integer where
+    type Scalar Integer = Integer
+    distance a1 a2 = P.abs $ a1 P.- a2
+
+----------------------------------------
 
 instance Topology a => Topology [a] where
     type Neighborhood [a] = Neighborhood a
@@ -138,24 +161,6 @@ instance (Topology a, Topology b) => Topology (a,b) where
 instance Topology () where
     type Neighborhood () = ()
     (==) _ _ = \_ -> True
-
-----------------------------------------
-
-class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a where
-    type Scalar a
-    distance :: a -> a -> Scalar a
-
-instance Metric Float where
-    type Scalar Float = Float
-    distance a1 a2 = P.abs $ a1 P.- a2
-
--- We want every Metric space to be an instance of a topology,
--- but this newtype doesn't ensure that
-newtype TopMet a = TopMet a
-
-instance Metric a => Topology (TopMet a) where
-    type Neighborhood (TopMet a) = Discrete (NonNegative (Scalar a))
-    isNeighbor (TopMet a1) (TopMet a2) (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
 
 ----------------------------------------
 
