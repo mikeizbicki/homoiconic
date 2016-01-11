@@ -53,6 +53,12 @@ instance Poset Rational where
 instance Lattice Rational where
     sup = P.max
 
+instance Poset Integer where
+    inf = P.min
+
+instance Lattice Integer where
+    sup = P.max
+
 --------------------
 
 instance Poset Int where
@@ -148,7 +154,7 @@ instance Poset a => Poset (NonNegative a) where
 instance Lattice a => Lattice (NonNegative a) where
     sup (NonNegative a1) (NonNegative a2) = NonNegative $ sup a1 a2
 
-instance (P.Num a, Poset a) => LowerBounded (NonNegative a) where
+instance (Num a, Poset a) => LowerBounded (NonNegative a) where
     lowerBound = NonNegative 0
 
 --------------------

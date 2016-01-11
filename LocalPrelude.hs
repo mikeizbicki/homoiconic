@@ -21,6 +21,8 @@ module LocalPrelude
     , (++)
     , ($)
     , (.)
+
+    , Num (..)
     )
 
     where

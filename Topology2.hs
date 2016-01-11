@@ -68,6 +68,15 @@ class
     (>) :: Lattice a => a -> a -> Logic a
     (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
 
+--------------------
+
+type OpenSet x = (x, Neighborhood x)
+
+newtype Borel x = Borel [OpenSet x]
+
+-- NOTE: Borel sets can't be represented using this system
+-- because we can't take the intersection of two open sets
+
 ----------------------------------------
 
 instance Topology Float where
@@ -78,6 +87,10 @@ instance Topology Float where
 instance Topology Rational where
     type Neighborhood Rational = Discrete (NonNegative Rational)
     isNeighbor a1 a2 (Discrete (NonNegative r) `NCons` n) = ((P.abs $ a1 P.- a2) P.<= r)
+
+instance Topology Integer where
+    type Neighborhood Integer = Discrete (NonNegative Integer)
+    isNeighbor a1 a2 (Discrete (NonNegative i) `NCons` n) = ((P.abs $ a1 P.- a2) P.<= i)
 
 instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
@@ -125,6 +138,24 @@ instance (Topology a, Topology b) => Topology (a,b) where
 instance Topology () where
     type Neighborhood () = ()
     (==) _ _ = \_ -> True
+
+----------------------------------------
+
+class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a where
+    type Scalar a
+    distance :: a -> a -> Scalar a
+
+instance Metric Float where
+    type Scalar Float = Float
+    distance a1 a2 = P.abs $ a1 P.- a2
+
+-- We want every Metric space to be an instance of a topology,
+-- but this newtype doesn't ensure that
+newtype TopMet a = TopMet a
+
+instance Metric a => Topology (TopMet a) where
+    type Neighborhood (TopMet a) = Discrete (NonNegative (Scalar a))
+    isNeighbor (TopMet a1) (TopMet a2) (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
 
 ----------------------------------------
 
