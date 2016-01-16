@@ -107,6 +107,9 @@ instance UpperBounded b => UpperBounded (a -> b) where
 instance Complemented b => Complemented (a -> b) where
     not f = \a -> not (f a)
 
+instance Heyting b => Heyting (a -> b) where
+    f ==> g = \a -> f a ==> g a
+
 --------------------
 
 instance (Poset a, Poset b) => Poset (a,b) where

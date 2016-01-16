@@ -25,6 +25,9 @@ instance Poset (Community a) where
 instance LowerBounded (Community a) where
     lowerBound = NNil
 
+withNeighborhood :: Poset a => (Community a -> Bool) -> a -> (Community (Neighborhood a) -> Bool)
+withNeighborhood f a = \cna -> f (NCons a cna)
+
 mkTuple :: LowerBounded a => Community a -> (a, Community (Neighborhood a))
 mkTuple NNil          = (lowerBound,NNil)
 mkTuple (NCons a cna) = (a,cna)
@@ -172,3 +175,41 @@ ifThenElse f a1 a2 = case f lowerBound of
 instance Show (Community a -> Bool) where
     show f = show $ f lowerBound
 
+--------------------------------------------------------------------------------
+
+class Topology a => Semigroup a where
+
+    infixr 6 +
+    (+) :: a -> a -> a
+
+    neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
+    neighborhood_Semigroup_associative _ _ _ = lowerBound
+
+law_Semigroup_associative :: Semigroup a => a -> a -> a -> Logic a
+law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
+
+-- | Category of topological spaces.
+-- The morphisms are continuous functions.
+--
+-- See <wikipedia https://en.wikipedia.org/wiki/Category_of_topological_spaces>
+-- for more details.
+data Top a b where
+    Top ::
+        ( Topology a
+        , Topology b
+        , Neighborhood (Neighborhood a)~Neighborhood (Neighborhood b)
+        ) => { arrow :: a -> b
+             , inv :: a -> Neighborhood b -> Neighborhood a
+             }
+        -> Top a b
+
+comp :: forall a b c. Top b c -> Top a b -> Top a c
+comp (Top f1 inv1) (Top f2 inv2) = Top
+    { arrow = f1 . f2
+    , inv = \a nc -> inv2 a (inv1 (f2 a) nc)
+    }
+
+prop_Top :: Top a b -> a -> a -> Neighborhood b -> Logic (Neighborhood a)
+prop_Top (Top f inv) a1 a2 nb
+    = (withNeighborhood (  a1 `isNeighbor`   a2) (inv a1 nb))
+  ==> (withNeighborhood (f a1 `isNeighbor` f a2) nb)

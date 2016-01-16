@@ -22,9 +22,11 @@ module LocalPrelude
     , ($)
     , (.)
 
-    , Num (..)
+    , Num --(..)
+    , Proxy (..)
     )
 
     where
 
 import Prelude
+import Data.Proxy
