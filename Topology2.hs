@@ -25,7 +25,8 @@ instance Poset (Community a) where
 instance LowerBounded (Community a) where
     lowerBound = NNil
 
-withNeighborhood :: Poset a => (Community a -> Bool) -> a -> (Community (Neighborhood a) -> Bool)
+-- withNeighborhood :: Poset a => (Community a -> Bool) -> a -> (Community (Neighborhood a) -> Bool)
+withNeighborhood :: Poset a => (Community a -> Bool) -> a -> Logic a
 withNeighborhood f a = \cna -> f (NCons a cna)
 
 mkTuple :: LowerBounded a => Community a -> (a, Community (Neighborhood a))
@@ -41,6 +42,7 @@ mkTuple (NCons a cna) = (a,cna)
 class
     ( Topology (Neighborhood a)
     , LowerBounded (Neighborhood a)
+    , Lattice (Neighborhood a)
     ) => Topology a
         where
 
@@ -104,6 +106,26 @@ instance Topology a => Topology (NonNegative a) where
 
 ----------------------------------------
 
+class Topology a => Manifold a where
+    getNeighbor :: a -> Neighborhood a -> a
+
+    getNeighborhood :: a -> a -> Neighborhood a
+
+law_Manifold_edge :: Manifold a => a -> Neighborhood a -> Neighborhood a -> Logic (Neighborhood a)
+law_Manifold_edge a n1 n2 = withNeighborhood (isNeighbor a a') n1'
+                    && not (withNeighborhood (isNeighbor a a') n2')
+    where
+        n1' = inf n1 n2
+        n2' = sup n1 n2
+        a'  = getNeighbor a n1'
+
+-- law_getNeighborhood :: Manifold a => a -> a -> Logic a
+-- law_getNeighborhood a1 a2 = getNeighbor a1 (getNeighborhood a1 a2) == a2
+law_getNeighborhood :: Manifold a => a -> Neighborhood a -> Logic (Neighborhood a)
+law_getNeighborhood a1 n1 = getNeighborhood a1 (getNeighbor a1 n1) == n1
+
+----------------------------------------
+
 class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a where
     type Scalar a
     distance :: a -> a -> Scalar a
@@ -145,6 +167,9 @@ instance Topology a => Poset [a] where
 
 instance Topology a => LowerBounded [a] where
     lowerBound = []
+
+-- | FIXME:
+instance Topology a => Lattice [a]
 
 --------------------
 

@@ -24,9 +24,11 @@ module LocalPrelude
 
     , Num --(..)
     , Proxy (..)
+    , module GHC.Exts
     )
 
     where
 
 import Prelude
 import Data.Proxy
+import GHC.Exts

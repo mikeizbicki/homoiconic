@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableSuperClasses #-}
 module Topology1
     where
 
@@ -17,7 +18,7 @@ ifThenElse f a1 a2 = case f lowerBound of
 ----------------------------------------
 
 -- class LowerBounded (Neighborhood a) => Topology a where
-class (LowerBounded (Neighborhood a), Lattice (Neighborhood a)) => Topology a where
+class (Topology (Neighborhood a), LowerBounded (Neighborhood a), Lattice (Neighborhood a)) => Topology a where
     type Neighborhood a
 
     {-# MINIMAL isNeighbor | (==) #-}
@@ -55,6 +56,33 @@ law_Topology_equality a = a==a
 -- law_Topology_compatibility :: Topology a =>
 -- law_Topology_compatibility a1 a2
 
+--------------------
+
+-- | Technically, this class corresponds to the idea of a "fiber bundle."
+-- A Manifold is a fiber bundle where Neighborhood is a Euclidean space.
+-- Because of our "approximate laws" induced by the topology, however,
+-- we don't need to introduce a separate type class for the two ideas.
+-- I'm not yet sure if this is good or just confusing.
+--
+-- TODO:
+-- Is it possible to construct "free" manifolds from semigroups or lattices?
+class Topology a => Manifold a where
+    getNeighbor :: a -> Neighborhood a -> a
+
+    getNeighborhood :: a -> a -> Neighborhood a
+
+law_Manifold_edge :: Manifold a => a -> Neighborhood a -> Neighborhood a -> Bool -- Logic a
+law_Manifold_edge a n1 n2 = isNeighbor a (a', n1') && not (isNeighbor a (a', n2'))
+    where
+        n1' = inf n1 n2
+        n2' = sup n1 n2
+        a'  = getNeighbor a n1'
+
+-- law_getNeighborhood :: Manifold a => a -> a -> Logic a
+-- law_getNeighborhood a1 a2 = getNeighbor a1 (getNeighborhood a1 a2) == a2
+law_getNeighborhood :: Manifold a => a -> Neighborhood a -> Logic (Neighborhood a)
+law_getNeighborhood a1 n1 = getNeighborhood a1 (getNeighbor a1 n1) == n1
+
 ----------------------------------------
 
 instance (Topology a, Topology b) => Topology (a -> b) where
@@ -80,13 +108,16 @@ instance Topology Bool where
     type Neighborhood Bool = ()
     (==) a1 a2 = \_ -> a1 P.== a2
 
+instance Topology (Discrete a) where
+    type Neighborhood (Discrete a) = ()
+
 instance Topology Float where
-    type Neighborhood Float = NonNegative Rational
-    isNeighbor a1 (a2,NonNegative n) = (toRational (P.abs (a1 P.- a2)) <= n) (NonNegative 0)
+    type Neighborhood Float = Discrete (NonNegative Rational)
+    isNeighbor a1 (a2,Discrete (NonNegative n)) = (toRational (P.abs (a1 P.- a2)) <= n) (Discrete $ NonNegative 0)
 
 instance Topology Rational where
-    type Neighborhood Rational = NonNegative Rational
-    isNeighbor a1 (a2,NonNegative n) = (P.abs (a1 P.- a2) <= n) (NonNegative 0)
+    type Neighborhood Rational = Discrete (NonNegative Rational)
+    isNeighbor a1 (a2,Discrete (NonNegative n)) = (P.abs (a1 P.- a2) <= n) (Discrete $ NonNegative 0)
 
 --------------------
 
