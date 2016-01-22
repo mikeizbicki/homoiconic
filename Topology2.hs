@@ -185,6 +185,16 @@ class Topology a => Semigroup a where
     neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
     neighborhood_Semigroup_associative _ _ _ = lowerBound
 
+--     plus :: (a,Neighborhood a) -> (a, Neighborhood a) -> (a,Neighborhood a)
+--
+--     neighborhood_Semigroup_error :: a -> a -> Neighborhood a
+--     neighborhood_Semigroup_error _ _ = lowerBound
+--
+--     neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
+--     neighborhood_Semigroup_associative a1 a2 a3
+--         = sup (P.snd $ plus (a1+a2,neighborhood_Semigroup_error a1 a2) (a3,lowerBound))
+--               (P.snd $ plus (a3+a2,neighborhood_Semigroup_error a3 a2) (a1,lowerBound))
+
 law_Semigroup_associative :: Semigroup a => a -> a -> a -> Logic a
 law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
 
