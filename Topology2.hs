@@ -12,6 +12,8 @@ import Test.Framework.Runners.Console
 import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck.Arbitrary
 
+import Debug.Trace
+
 ----------------------------------------
 
 type Logic a = Community (Neighborhood a) -> Bool
@@ -96,7 +98,10 @@ law_Topology_inf a1 a2 c1 c2
 
 instance Topology Float where
     type Neighborhood Float = Discrete (NonNegative Float)
-    isNeighbor = fromMetric_isNeighbor
+    isNeighbor a1 a2 c = distance a1 a2 P.<= n1
+        where
+            (Discrete (NonNegative n1),n2) = mkTuple c
+--     isNeighbor = fromMetric_isNeighbor
 
 instance Topology Rational where
     type Neighborhood Rational = Discrete (NonNegative Rational)
@@ -141,11 +146,11 @@ class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a wher
     distance :: a -> a -> Scalar a
 
 fromMetric_isNeighbor ::
---     ( Neighborhood a~Discrete (NonNegative (Scalar a))
-    ( P.Eq (Scalar a)
+    ( Neighborhood a~Discrete (NonNegative (Scalar a))
+    , P.Eq (Scalar a)
     , Metric a
     ) => a -> a -> Logic a
--- fromMetric_isNeighbor a1 a2 (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
+fromMetric_isNeighbor a1 a2 (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
 fromMetric_isNeighbor a1 a2 NNil            = distance a1 a2 P.== 0 -- ((Discrete $ NonNegative $ distance a1 a2) <= lowerBound) lowerBound
 -- fromMetric_isNeighbor a1 a2 NNil            = True -- ((Discrete $ NonNegative $ distance a1 a2) <= lowerBound) lowerBound
 
@@ -244,7 +249,42 @@ instance Semigroup Integer where
 
 instance Semigroup Float where
     (+) = (P.+)
-    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 1) NNil
+    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 2e-4) NNil
+
+--------------------
+
+class cxt => Lawful (cxt :: Constraint) where
+    lawful :: proxy cxt -> Test
+
+instance (Lawful cxt1, Lawful cxt2) => Lawful (cxt1,cxt2) where
+    lawful _ = testGroup "Tuple-2"
+        [ lawful (Proxy::Proxy cxt1)
+        , lawful (Proxy::Proxy cxt2)
+        ]
+
+instance (Lawful cxt1, Lawful cxt2, Lawful cxt3) => Lawful (cxt1,cxt2,cxt3) where
+    lawful _ = testGroup "Tuple-3"
+        [ lawful (Proxy::Proxy cxt1)
+        , lawful (Proxy::Proxy cxt2)
+        , lawful (Proxy::Proxy cxt3)
+        ]
+
+instance
+    ( Show a
+    , Arbitrary a
+    , Semigroup a
+    ) => Lawful (Semigroup a)
+        where
+    lawful _ = testGroup "Semigroup"
+        [ testProperty "associative" (\(a1::a) (a2::a) (a3::a) ->
+            (law_Semigroup_associative a1 a2 a3) (neighborhood_Semigroup_associative a1 a2 a3)
+            )
+        ]
+
+isLawful :: forall cxt. Lawful cxt => IO ()
+isLawful = defaultMain [lawful (undefined::proxy cxt)]
+
+--------------------
 
 class (Neighborhood a <: Neighborhood b) => a <: b where
 -- class a <: b where
@@ -277,37 +317,6 @@ class Hom (cxt :: * -> Constraint) where
 instance Hom Semigroup where
     type HomInput Semigroup a b = (a,a)
     law_hom _ f (a1,a2) = f (a1+a2) == f a1 + f a2
-
-class cxt => Lawful (cxt :: Constraint) where
-    lawful :: proxy cxt -> Test
-
-instance (Lawful cxt1, Lawful cxt2) => Lawful (cxt1,cxt2) where
-    lawful _ = testGroup "Tuple-2"
-        [ lawful (Proxy::Proxy cxt1)
-        , lawful (Proxy::Proxy cxt2)
-        ]
-
-instance (Lawful cxt1, Lawful cxt2, Lawful cxt3) => Lawful (cxt1,cxt2,cxt3) where
-    lawful _ = testGroup "Tuple-3"
-        [ lawful (Proxy::Proxy cxt1)
-        , lawful (Proxy::Proxy cxt2)
-        , lawful (Proxy::Proxy cxt3)
-        ]
-
-instance
-    ( Show a
-    , Arbitrary a
-    , Semigroup a
-    ) => Lawful (Semigroup a)
-        where
-    lawful _ = testGroup "Semigroup"
-        [ testProperty "associative" (\(a1::a) (a2::a) (a3::a) ->
-            (law_Semigroup_associative a1 a2 a3) (neighborhood_Semigroup_associative a1 a2 a3)
-            )
-        ]
-
-isLawful :: Lawful cxt => proxy cxt -> IO ()
-isLawful cxt = defaultMain [lawful cxt]
 
 -- | Category of topological spaces.
 -- The morphisms are continuous functions.
