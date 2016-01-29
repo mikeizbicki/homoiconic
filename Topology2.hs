@@ -7,6 +7,11 @@ import qualified Prelude as P
 import LocalPrelude
 import Lattice
 
+import Test.Framework
+import Test.Framework.Runners.Console
+import Test.Framework.Providers.QuickCheck2
+import Test.QuickCheck.Arbitrary
+
 ----------------------------------------
 
 type Logic a = Community (Neighborhood a) -> Bool
@@ -15,6 +20,11 @@ data Community a where
     NNil    :: Community a
     NCons   :: Poset a => a -> Community (Neighborhood a) -> Community a
     NBranch :: Community a -> Community b -> Community (a,b)
+
+instance Show (Community a) where
+    show (NNil) = "NNil"
+    show (NCons a na) = "NCons (a) ("++show na++")"
+    show (NBranch ca cb) = "NBranch ("++show ca++") ("++show cb++")"
 
 instance Poset (Community a) where
     inf NNil _ = NNil
@@ -131,10 +141,13 @@ class (Topology (Scalar a), Num (Scalar a), Lattice (Scalar a)) => Metric a wher
     distance :: a -> a -> Scalar a
 
 fromMetric_isNeighbor ::
-    ( Neighborhood a~Discrete (NonNegative (Scalar a))
+--     ( Neighborhood a~Discrete (NonNegative (Scalar a))
+    ( P.Eq (Scalar a)
     , Metric a
     ) => a -> a -> Logic a
-fromMetric_isNeighbor a1 a2 (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
+-- fromMetric_isNeighbor a1 a2 (n1 `NCons` n2) = ((Discrete $ NonNegative $ distance a1 a2) <= n1) n2
+fromMetric_isNeighbor a1 a2 NNil            = distance a1 a2 P.== 0 -- ((Discrete $ NonNegative $ distance a1 a2) <= lowerBound) lowerBound
+-- fromMetric_isNeighbor a1 a2 NNil            = True -- ((Discrete $ NonNegative $ distance a1 a2) <= lowerBound) lowerBound
 
 instance Metric Float where
     type Scalar Float = Float
@@ -207,7 +220,7 @@ class Topology a => Semigroup a where
     infixr 6 +
     (+) :: a -> a -> a
 
-    neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
+    neighborhood_Semigroup_associative :: a -> a -> a -> Community (Neighborhood a)
     neighborhood_Semigroup_associative _ _ _ = lowerBound
 
 --     plus :: (a,Neighborhood a) -> (a, Neighborhood a) -> (a,Neighborhood a)
@@ -222,6 +235,79 @@ class Topology a => Semigroup a where
 
 law_Semigroup_associative :: Semigroup a => a -> a -> a -> Logic a
 law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
+
+instance Semigroup () where
+    ()+()=()
+
+instance Semigroup Integer where
+    (+) = (P.+)
+
+instance Semigroup Float where
+    (+) = (P.+)
+    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 1) NNil
+
+class (Neighborhood a <: Neighborhood b) => a <: b where
+-- class a <: b where
+    embed :: a -> b
+
+instance a <: a where
+    embed a = a
+
+-- instance (Neighborhood a <: Neighborhood ()) => a <: () where
+--     embed _ = ()
+
+law_SubType :: forall a b cxt proxy.
+    ( a <: b
+    , cxt a
+    , cxt b
+    , Hom cxt
+    ) => proxy cxt
+      -> (a,b)
+      -> HomInput cxt a b
+      -> Logic b
+law_SubType cxt _ = law_hom cxt (embed :: a -> b)
+
+-- prop_Semigroup_homomorphism :: (Semigroup a, Semigroup b) => (a -> b) -> a -> a -> Logic b
+-- prop_Semigroup_homomorphism f a1 a2 = f (a1+a2) == f a1 + f a2
+
+class Hom (cxt :: * -> Constraint) where
+    type HomInput cxt a b
+    law_hom :: (cxt a, cxt b) => proxy cxt -> (a -> b) -> HomInput cxt a b -> Logic b
+
+instance Hom Semigroup where
+    type HomInput Semigroup a b = (a,a)
+    law_hom _ f (a1,a2) = f (a1+a2) == f a1 + f a2
+
+class cxt => Lawful (cxt :: Constraint) where
+    lawful :: proxy cxt -> Test
+
+instance (Lawful cxt1, Lawful cxt2) => Lawful (cxt1,cxt2) where
+    lawful _ = testGroup "Tuple-2"
+        [ lawful (Proxy::Proxy cxt1)
+        , lawful (Proxy::Proxy cxt2)
+        ]
+
+instance (Lawful cxt1, Lawful cxt2, Lawful cxt3) => Lawful (cxt1,cxt2,cxt3) where
+    lawful _ = testGroup "Tuple-3"
+        [ lawful (Proxy::Proxy cxt1)
+        , lawful (Proxy::Proxy cxt2)
+        , lawful (Proxy::Proxy cxt3)
+        ]
+
+instance
+    ( Show a
+    , Arbitrary a
+    , Semigroup a
+    ) => Lawful (Semigroup a)
+        where
+    lawful _ = testGroup "Semigroup"
+        [ testProperty "associative" (\(a1::a) (a2::a) (a3::a) ->
+            (law_Semigroup_associative a1 a2 a3) (neighborhood_Semigroup_associative a1 a2 a3)
+            )
+        ]
+
+isLawful :: Lawful cxt => proxy cxt -> IO ()
+isLawful cxt = defaultMain [lawful cxt]
 
 -- | Category of topological spaces.
 -- The morphisms are continuous functions.

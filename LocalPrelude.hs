@@ -1,11 +1,11 @@
 module LocalPrelude
     ( Bool(..)
-    , Int
+--     , Int
     , Integer
     , Rational
-    , Float
-    , Double
-    , Char
+--     , Float
+--     , Double
+--     , Char
     , String
     , Maybe(..)
 
@@ -17,6 +17,7 @@ module LocalPrelude
     , toRational
 
     , Show (..)
+    , IO
 
     , (++)
     , ($)
