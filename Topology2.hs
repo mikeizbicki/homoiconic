@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE ImplicitParams #-}
 
 module Topology
     where
@@ -118,6 +119,34 @@ instance Topology a => Topology (Discrete a) where
 instance Topology a => Topology (NonNegative a) where
     type Neighborhood (NonNegative a) = Neighborhood a
     isNeighbor (NonNegative a1) (NonNegative a2) = isNeighbor a1 a2
+
+--------------------
+
+-- | Category of topological spaces.
+-- The morphisms are continuous functions.
+--
+-- See <wikipedia https://en.wikipedia.org/wiki/Category_of_topological_spaces>
+-- for more details.
+data Top a b where
+    Top ::
+        ( Topology a
+        , Topology b
+        , Neighborhood (Neighborhood a)~Neighborhood (Neighborhood b)
+        ) => { arrow :: a -> b
+             , inv :: a -> Neighborhood b -> Neighborhood a
+             }
+        -> Top a b
+
+comp :: forall a b c. Top b c -> Top a b -> Top a c
+comp (Top f1 inv1) (Top f2 inv2) = Top
+    { arrow = f1 . f2
+    , inv = \a nc -> inv2 a (inv1 (f2 a) nc)
+    }
+
+prop_Top :: Top a b -> a -> a -> Neighborhood b -> Logic (Neighborhood a)
+prop_Top (Top f inv) a1 a2 nb
+    = (withNeighborhood (  a1 `isNeighbor`   a2) (inv a1 nb))
+  ==> (withNeighborhood (f a1 `isNeighbor` f a2) nb)
 
 ----------------------------------------
 
@@ -249,7 +278,7 @@ instance Semigroup Integer where
 
 instance Semigroup Float where
     (+) = (P.+)
-    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 2e-4) NNil
+    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 2e-2) NNil
 
 --------------------
 
@@ -286,17 +315,27 @@ isLawful = defaultMain [lawful (undefined::proxy cxt)]
 
 --------------------
 
-class (Neighborhood a <: Neighborhood b) => a <: b where
--- class a <: b where
+-- class (Neighborhood a <: Neighborhood b) => a <: b where
+class a <: b where
     embed :: a -> b
 
 instance a <: a where
     embed a = a
 
--- instance (Neighborhood a <: Neighborhood ()) => a <: () where
---     embed _ = ()
+instance Top a b <: (->) a b where
+    embed = arrow
 
-law_SubType :: forall a b cxt proxy.
+-- instance (Neighborhood a <: Neighborhood ()) => a <: () where
+instance a <: () where
+    embed _ = ()
+
+instance (a,b) <: a where
+    embed (a,b) = a
+
+instance (a,b) <: b where
+    embed (a,b) = b
+
+law_SubType_hom :: forall a b cxt proxy.
     ( a <: b
     , cxt a
     , cxt b
@@ -305,7 +344,29 @@ law_SubType :: forall a b cxt proxy.
       -> (a,b)
       -> HomInput cxt a b
       -> Logic b
-law_SubType cxt _ = law_hom cxt (embed :: a -> b)
+law_SubType_hom cxt _ = law_hom cxt (embed :: a -> b)
+
+law_SubType_mon :: forall a b cxt.
+    ( a <: b
+    , cxt a
+    ) => (cxt b => ())
+law_SubType_mon = ()
+
+law_SubType_mon2 :: forall a b. a <: b => forall cxt. cxt a => (cxt b => ())
+law_SubType_mon2 = ()
+
+class SubType a b (cxt :: * -> Constraint) where
+    embed2 :: a -> b
+
+instance SubType a a cxt where
+    embed2 a = a
+
+instance cxt a => SubType (a,b) a cxt where
+    embed2 (a,b) = a
+
+type family IfCxt (cxt :: Constraint) (arg:: Constraint) :: Constraint where
+    IfCxt a a = ()
+    IfCxt (cxt (a,b)) (cxt a) = cxt a
 
 -- prop_Semigroup_homomorphism :: (Semigroup a, Semigroup b) => (a -> b) -> a -> a -> Logic b
 -- prop_Semigroup_homomorphism f a1 a2 = f (a1+a2) == f a1 + f a2
@@ -317,29 +378,3 @@ class Hom (cxt :: * -> Constraint) where
 instance Hom Semigroup where
     type HomInput Semigroup a b = (a,a)
     law_hom _ f (a1,a2) = f (a1+a2) == f a1 + f a2
-
--- | Category of topological spaces.
--- The morphisms are continuous functions.
---
--- See <wikipedia https://en.wikipedia.org/wiki/Category_of_topological_spaces>
--- for more details.
-data Top a b where
-    Top ::
-        ( Topology a
-        , Topology b
-        , Neighborhood (Neighborhood a)~Neighborhood (Neighborhood b)
-        ) => { arrow :: a -> b
-             , inv :: a -> Neighborhood b -> Neighborhood a
-             }
-        -> Top a b
-
-comp :: forall a b c. Top b c -> Top a b -> Top a c
-comp (Top f1 inv1) (Top f2 inv2) = Top
-    { arrow = f1 . f2
-    , inv = \a nc -> inv2 a (inv1 (f2 a) nc)
-    }
-
-prop_Top :: Top a b -> a -> a -> Neighborhood b -> Logic (Neighborhood a)
-prop_Top (Top f inv) a1 a2 nb
-    = (withNeighborhood (  a1 `isNeighbor`   a2) (inv a1 nb))
-  ==> (withNeighborhood (f a1 `isNeighbor` f a2) nb)
