@@ -25,11 +25,17 @@ module LocalPrelude
 
     , Num --(..)
     , Proxy (..)
+    , Symbol
+    , Nat
     , module GHC.Exts
+    , module Data.Kind
+--     , module GHC.TypeLits
     )
 
     where
 
 import Prelude
+import Data.Kind
 import Data.Proxy
 import GHC.Exts
+import GHC.TypeLits
