@@ -19,6 +19,8 @@ module LocalPrelude
     , Show (..)
     , IO
 
+    , map
+    , concat
     , (++)
     , ($)
     , (.)
