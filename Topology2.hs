@@ -115,6 +115,10 @@ instance Topology Integer where
     type Neighborhood Integer = Discrete (NonNegative Integer)
     isNeighbor = fromMetric_isNeighbor
 
+instance Topology Int where
+    type Neighborhood Int = Discrete (NonNegative Int)
+    isNeighbor = fromMetric_isNeighbor
+
 instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
     isNeighbor (Discrete a1) (Discrete a2) _ = isNeighbor a1 a2 lowerBound
@@ -198,6 +202,10 @@ instance Metric Integer where
     type Scalar Integer = Integer
     distance a1 a2 = P.abs $ a1 P.- a2
 
+instance Metric Int where
+    type Scalar Int = Int
+    distance a1 a2 = P.abs $ a1 P.- a2
+
 ----------------------------------------
 
 instance Topology a => Topology [a] where
@@ -279,12 +287,54 @@ law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
 instance Semigroup () where
     ()+()=()
 
+instance Semigroup Int where
+    (+) = (P.+)
+
 instance Semigroup Integer where
     (+) = (P.+)
 
 instance Semigroup Float where
     (+) = (P.+)
     neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 2e-2) NNil
+
+--------------------
+
+class FAlgebra (cxt :: Type -> Constraint) where
+    ops0 :: cxt a => proxy cxt -> [a]
+    ops1 :: cxt a => proxy cxt -> [a -> a]
+    ops2 :: cxt a => proxy cxt -> [a -> a -> a]
+    ops3 :: cxt a => proxy cxt -> [a -> a -> a -> a]
+
+    ops0 _ = []
+    ops1 _ = []
+    ops2 _ = []
+    ops3 _ = []
+
+instance FAlgebra Semigroup where
+    ops2 _ = [(+)]
+
+instance FAlgebra Poset where
+    ops2 _ = [inf]
+
+instance FAlgebra Lattice where
+    ops2 _ = [sup]
+
+-- | Checks if a given function is a homomorphism with respect to the FAlgebra's binary operations.
+-- Only checks on the given input variables.
+--
+-- FIXME:
+-- True impredicativity could simplify the definition.
+isHom2 :: forall proxy cxt a b.
+    ( FAlgebra cxt
+    , cxt a
+    , cxt b
+    , Topology b
+    ) => proxy cxt -> (a -> b) -> a -> a -> Logic b
+isHom2 p f a1 a2 = P.foldl (&&) upperBound $
+    map (\(opa,opb) -> opb (f a1) (f a2) == f (opa a1 a2))
+    $ P.zip
+        (ops2 p :: [a -> a -> a])
+        (ops2 p :: [b -> b -> b])
 
 --------------------
 
