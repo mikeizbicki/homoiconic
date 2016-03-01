@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Topology2
     where
@@ -10,12 +11,14 @@ module Topology2
 import qualified Prelude as P
 import LocalPrelude
 import Lattice
+import Union
 
 import Test.Framework
 import Test.Framework.Runners.Console
 import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck.Arbitrary
 
+import GHC.Generics
 import Debug.Trace
 
 ----------------------------------------
@@ -299,42 +302,59 @@ instance Semigroup Float where
 
 --------------------
 
-class FAlgebra (cxt :: Type -> Constraint) where
-    ops0 :: cxt a => proxy cxt -> [a]
-    ops1 :: cxt a => proxy cxt -> [a -> a]
-    ops2 :: cxt a => proxy cxt -> [a -> a -> a]
-    ops3 :: cxt a => proxy cxt -> [a -> a -> a -> a]
-
-    ops0 _ = []
-    ops1 _ = []
-    ops2 _ = []
-    ops3 _ = []
-
-instance FAlgebra Semigroup where
-    ops2 _ = [(+)]
-
-instance FAlgebra Poset where
-    ops2 _ = [inf]
-
-instance FAlgebra Lattice where
-    ops2 _ = [sup]
-
--- | Checks if a given function is a homomorphism with respect to the FAlgebra's binary operations.
--- Only checks on the given input variables.
+-- class FAlgebra (cxt :: Constraint) where
+--     type Ops cxt :: Type
+--     ops :: cxt => proxy cxt -> [Ops cxt]
 --
--- FIXME:
--- True impredicativity could simplify the definition.
-isHom2 :: forall proxy cxt a b.
-    ( FAlgebra cxt
-    , cxt a
-    , cxt b
-    , Topology b
-    ) => proxy cxt -> (a -> b) -> a -> a -> Logic b
-isHom2 p f a1 a2 = P.foldl (&&) upperBound $
-    map (\(opa,opb) -> opb (f a1) (f a2) == f (opa a1 a2))
-    $ P.zip
-        (ops2 p :: [a -> a -> a])
-        (ops2 p :: [b -> b -> b])
+--     type Laws cxt :: Type
+--     laws :: cxt => proxy cxt -> [Laws cxt]
+--
+-- instance Semigroup a => FAlgebra (Semigroup a) where
+--     type Ops (Semigroup a) = a->a->a
+--     ops _ = [(+)]
+--
+--     type Laws (Semigroup a) = a->a->a->Logic a
+--     laws _ = [\a1 a2 a3 -> (a1+a2)+a3==a1+(a2+a3)]
+
+-- class FAlgebra (cxt :: Type -> Constraint) where
+--     ops0 :: cxt a => proxy cxt -> [a]
+--     ops1 :: cxt a => proxy cxt -> [a -> a]
+--     ops2 :: cxt a => proxy cxt -> [a -> a -> a]
+--     ops3 :: cxt a => proxy cxt -> [a -> a -> a -> a]
+--
+--     ops0 _ = []
+--     ops1 _ = []
+--     ops2 _ = []
+--     ops3 _ = []
+--
+--     laws3 :: cxt a => proxy cxt -> [a -> a -> a -> Logic a]
+--
+-- instance FAlgebra Semigroup where
+--     ops2 _ = [(+)]
+--     laws3 _ = [\a1 a2 a3 -> (a1+a2)+a3==a1+(a2+a3)]
+--
+-- instance FAlgebra Poset where
+--     ops2 _ = [inf]
+--
+-- instance FAlgebra Lattice where
+--     ops2 _ = [sup]
+--
+-- -- | Checks if a given function is a homomorphism with respect to the FAlgebra's binary operations.
+-- -- Only checks on the given input variables.
+-- --
+-- -- FIXME:
+-- -- True impredicativity could simplify the definition.
+-- isHom2 :: forall proxy cxt a b.
+--     ( FAlgebra cxt
+--     , cxt a
+--     , cxt b
+--     , Topology b
+--     ) => proxy cxt -> (a -> b) -> a -> a -> Logic b
+-- isHom2 p f a1 a2 = P.foldl (&&) upperBound $
+--     map (\(opa,opb) -> opb (f a1) (f a2) == f (opa a1 a2))
+--     $ P.zip
+--         (ops2 p :: [a -> a -> a])
+--         (ops2 p :: [b -> b -> b])
 
 --------------------
 

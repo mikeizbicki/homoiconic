@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeInType #-}
+
 module Union
     where
 
@@ -5,10 +7,18 @@ import qualified Prelude as P
 import LocalPrelude
 import Lattice
 
-data Union (xs::[*]) where
+import GHC.TypeLits
+
+data Union (xs :: [Type]) where
 --     Union :: Proxy (n::Nat) -> Lookup n xs -> Union xs
 --     Union :: Proxy (n::SNat) -> Lookup n xs -> Union xs
     Union :: Elem x xs ~ 'True => Proxy x -> x -> Union xs
+--     Union :: cxt => Proxy cxt -> x -> Union xs
+--     Union :: Proxy x -> x -> Union xs
+
+data Or (xs :: [Type]) where
+    OLeft :: x -> Or (x:xs)
+    ORight :: Or xs -> Or (x:xs)
 
 type family Lookup n xs where
     Lookup 0 (x ': xs) = x
@@ -23,10 +33,17 @@ type family Map (x::k -> Constraint) (xs::[k]) :: Constraint where
     Map f '[] = ()
     Map f (x ': xs) = (f x, Map f xs)
 
-instance Map Show xs => Show (Union xs) where
-    show (Union _ x) = show x
+-- instance Show (Union '[]) where
+--     show (Union _ _) = "Union '[]"
 
--- test = Union 'c' :: Union [Char,Int]
+-- instance (Show x, Show (Union xs)) => Show (Union (x:xs)) where
+--     show (Union _ x) = show x
+
+-- instance Map Show xs => Show (Union xs) where
+--     show (Union _ x) = show x
+
+-- test1 = Union (Proxy::Proxy (x~Char)) 'c' :: Union [Char,Int]
+-- test2 = Union Proxy (1::Int) :: Union [Char,Int]
 
 -- test :: Union '[Char, Int] -> String
 -- test (Union _ (c::Char)) = show c
@@ -39,4 +56,3 @@ type family (||) a b where
     a        || Union xs = Union (a:xs)
     Union xs || b        = Union (xs++ '[b])
     a        || b        = Union '[a,b]
-
