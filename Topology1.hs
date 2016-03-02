@@ -6,10 +6,12 @@ module Topology1
 import qualified Prelude as P
 import LocalPrelude
 import Lattice
-import Tests
+
+import Debug.Trace
 
 --------------------------------------------------------------------------------
 
+type Community a = Neighborhood a
 type Logic a = Neighborhood a -> Bool
 
 ifThenElse :: LowerBounded b => (b -> Bool) -> a -> a -> a
@@ -127,7 +129,7 @@ instance Topology Float where
 
 instance Topology Rational where
     type Neighborhood Rational = Discrete (NonNegative Rational)
-    isNeighbor a1 (a2,Discrete (NonNegative n)) = (P.abs (a1 P.- a2) <= n) (Discrete $ NonNegative 0)
+    isNeighbor a1 (a2,Discrete (NonNegative n)) = P.abs (a1 P.- a2) P.<= n
 
 --------------------
 

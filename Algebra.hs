@@ -8,48 +8,15 @@ import qualified Prelude as P
 import LocalPrelude
 import Lattice
 import Tests
-import Topology1 hiding (Lawful (..), Semigroup (..))
+import Topology1 hiding (Lawful (..), Semigroup (..), isLawful)
+
+import Test.SmallCheck.Series hiding (NonNegative)
+import Test.Tasty
+import qualified Test.Tasty.SmallCheck as SC
+import qualified Test.Tasty.QuickCheck as QC
+import Test.QuickCheck hiding (Testable,NonNegative)
 
 import Debug.Trace
-
---------------------------------------------------------------------------------
-
-getMaxUnlawful :: Approximate cxt a
-    => Proxy (cxt :: * -> Constraint)
-    -> Proxy a
-    -> LawName
-    -> Neighborhood a
-getMaxUnlawful pcxt pa lawWanted = go $ maxUnlawful pcxt pa
-    where
-        go [] = lowerBound
-        go ((law,a):xs) = if law==lawWanted
-            then a
-            else go xs
-
-class (Lawful cxt, Topology a, cxt a) => Approximate cxt a where
-    maxUnlawful :: cxt a => Proxy cxt -> Proxy a -> [ (LawName, Neighborhood a) ]
-
-instance {-# OVERLAPPABLE #-} (Lawful cxt, Topology a, cxt a) => Approximate cxt a where
-    maxUnlawful _ _ = []
-
-instance {-# OVERLAPS #-}
-    ( Approximate cxt a
-    , Approximate cxt b
-    , cxt (a,b)
-    ) => Approximate cxt (a,b) where
-
-    maxUnlawful p1 _ = go
-        (maxUnlawful p1 (Proxy::Proxy a))
-        (maxUnlawful p1 (Proxy::Proxy b))
-        where
-            go as@((lawa,na):ar) bs@((lawb,nb):br) = case P.compare lawa lawb of
-                P.EQ -> (lawa,(na,nb)):go ar br
-                P.LT -> (lawa,(na,lowerBound)):go ar bs
-                P.GT -> (lawa,(lowerBound,nb)):go as br
-
-            go ((lawa,na):ar) [] = (lawa,(na,lowerBound)):go ar []
-            go [] ((lawb,nb):br) = (lawb,(lowerBound,nb)):go [] br
-            go [] [] = []
 
 --------------------------------------------------------------------------------
 
@@ -65,11 +32,11 @@ instance Lawful Semigroup where
             associative :: Semigroup a => proxy a -> (a,a,a) -> Logic a
             associative _ (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
 
-            associative' :: Semigroup a => (a,a,a) -> Logic a
-            associative' (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
+--             associative' :: Semigroup a => (a,a,a) -> Logic a
+--             associative' (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
 
-mkLaw' :: Testable p => Proxy (a::k) -> LawName -> (forall (a::k). p -> n -> Bool) -> Law
-mkLaw' (p::Proxy a) law f = Law law (f @a)
+-- mkLaw' :: Testable p => Proxy (a::k) -> LawName -> (forall (a::k). p -> n -> Bool) -> Law
+-- mkLaw' (p::Proxy a) law f = Law law (f @a)
 
 --------------------
 
@@ -77,7 +44,7 @@ instance Semigroup Float where
     (+) = (P.+)
 
 instance {-# OVERLAPS #-} Approximate Semigroup Float where
-    maxUnlawful _ _ = [("associative",Discrete $ NonNegative $ 1e-4)]
+    maxUnlawful _ _ = [("associative",Discrete $ NonNegative $ 2e-3)]
 
 --------------------
 
