@@ -1,10 +1,12 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE TypeApplications #-}
 module Topology1
     where
 
 import qualified Prelude as P
 import LocalPrelude
 import Lattice
+import Tests
 
 --------------------------------------------------------------------------------
 
@@ -12,8 +14,8 @@ type Logic a = Neighborhood a -> Bool
 
 ifThenElse :: LowerBounded b => (b -> Bool) -> a -> a -> a
 ifThenElse f a1 a2 = case f lowerBound of
-    True  -> a2
-    False -> a1
+    True  -> a1
+    False -> a2
 
 ----------------------------------------
 
@@ -104,8 +106,16 @@ instance Topology Int where
     type Neighborhood Int = ()
     (==) a1 a2 = \_ -> a1 P.== a2
 
+instance Topology Integer where
+    type Neighborhood Integer = ()
+    (==) a1 a2 = \_ -> a1 P.== a2
+
 instance Topology Bool where
     type Neighborhood Bool = ()
+    (==) a1 a2 = \_ -> a1 P.== a2
+
+instance Topology Char where
+    type Neighborhood Char = ()
     (==) a1 a2 = \_ -> a1 P.== a2
 
 instance Topology (Discrete a) where
@@ -182,115 +192,4 @@ orderTopology_isNeighbor ::
     , Metric a
     ) => a -> (a,Neighborhood a) -> Bool
 orderTopology_isNeighbor a1 (a2,NonNegative na) = (distance a1 a2 <= na) lowerBound
-
---------------------
-
-class Topology a => Semigroup a where
-
-    {-# MINIMAL (+) | plus #-}
-
-    infixr 6 +
-    (+) :: a -> a -> a
-    a1+a2 = P.fst $ plus (a1,lowerBound) (a2,lowerBound)
-
-    plus :: (a,Neighborhood a) -> (a,Neighborhood a) -> (a,Neighborhood a)
-    plus (a1,n1) (a2,n2) = (a1+a2,sup n1 n2)
-
-    neighborhood_Semigroup_error :: a -> a -> Neighborhood a
-    neighborhood_Semigroup_error _ _ = lowerBound
-
-    neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
-    neighborhood_Semigroup_associative a1 a2 a3
-        = sup (P.snd $ plus (a1+a2,neighborhood_Semigroup_error a1 a2) (a3,lowerBound))
-              (P.snd $ plus (a3+a2,neighborhood_Semigroup_error a3 a2) (a1,lowerBound))
-
-law_Semigroup_associative :: Semigroup a => a -> a -> a -> Logic a
-law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
-
-instance Semigroup Float where
-    (+) = (P.+)
-
-instance (Semigroup a, Semigroup b) => Semigroup (a,b) where
-    (a1,b1)+(a2,b2) = (a1+a2,b1+b2)
-
-    neighborhood_Semigroup_associative (a1,b1) (a2,b2) (a3,b3)
-        = ( neighborhood_Semigroup_associative a1 a2 a3
-          , neighborhood_Semigroup_associative b1 b2 b3
-          )
-
-instance Semigroup a => Semigroup [a] where
-    (x:xr)+(y:yr) = x+y : xr+yr
-    []    +ys     = ys
-    xs    +[]     = xs
-
-    neighborhood_Semigroup_associative as1 as2 as3
-        = P.foldl sup lowerBound $ P.zipWith3 neighborhood_Semigroup_associative as1 as2 as3
-
---------------------
-
-data Interval a where
-    Interval :: Topology a => a -> Neighborhood a -> Interval a
-
-instance Topology a => Topology (Interval a) where
-    type Neighborhood (Interval a) = Neighborhood a
-
-instance Semigroup (Interval Float) where
-    (Interval a1 n1)+(Interval a2 n2) = Interval (a1+a2) (sup n1 n2)
-
-----------------------------------------
-
-class Semigroup a => Monoid a where
-    zero :: a
-
-    neighborhood_Monoid_zero :: a -> Neighborhood a
-    neighborhood_Monoid_zero _ = lowerBound
-
-law_Monoid_zero :: Monoid a => a -> Logic a
-law_Monoid_zero a = zero+a == a
-
-class Monoid a => Group a where
-    {-# MINIMAL negate | (-) #-}
-    negate :: a -> a
-    negate a = zero - a
-
-    (-) :: a -> a -> a
-    a1-a2 = a1 + negate a2
-
-class Group a => Ring a where
-    one :: a
-    (*) :: a -> a -> a
-
-class Ring a => Field a where
-    {-# MINIMAL reciprocal | (/) #-}
-    reciprocal :: a -> a
-    reciprocal a = one / a
-
-    (/) :: a -> a -> a
-    a1/a2 = a1 * reciprocal a2
-
--- type Hask = (->)
---
--- class Semigroup (cat :: * -> * -> *) a where
---     (+) :: cat a (cat a a)
---
--- instance Semigroup (->) Float where
---     (+) = (P.+)
---
--- instance Semigroup (->) b => Semigroup (->) (a -> b) where
---     (+) f1 f2 = \a -> f1 a + f2 a
---
--- instance Semigroup Top Float where
---     (+) = Top
---         { arrow = \a1 -> Top
---             { arrow = \a2 -> a1 P.+ a2
---             , inv = \_ nb -> nb
---             }
---         , inv = \a (_,nb) -> nb
---         }
---
--- instance (Semigroup (->) b, Semigroup Top b) => Semigroup (->) (Top a b) where
---     (+) (Top f1 inv1) (Top f2 inv2) = Top
---         { arrow = f1 + f2
---         , inv = undefined
---         }
 

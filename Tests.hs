@@ -12,63 +12,43 @@ import qualified Prelude as P
 import LocalPrelude
 import Lattice
 import Union
-import Topology2 hiding (Lawful(..))
 
-import Test.Framework
-import Test.Framework.Runners.Console
-import Test.Framework.Providers.QuickCheck2
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Property
-
-import GHC.Generics
-import Debug.Trace
+import Test.SmallCheck.Series
+import Test.Tasty
+import qualified Test.Tasty.SmallCheck as SC
+import qualified Test.Tasty.QuickCheck as QC
+import Test.QuickCheck hiding (Testable)
 
 --------------------------------------------------------------------------------
 
-data family Dict (cxt :: Constraint)
+type LawName = String
 
-data instance Dict (Semigroup a) = Dict_Semigroup
-    deriving Generic
-
-data instance Dict (Topology a) = Dict_Topology
-    deriving Generic
-
-----------------------------------------
-
-class GenericClass (cxt::Constraint) where
-    type OpType cxt
-    op :: Proxy cxt -> OpType cxt
-
-instance Semigroup a => GenericClass (Semigroup a) where
-    type OpType (Semigroup a) = (a -> a -> a)
-    op _ = (+)
-
---------------------------------------------------------------------------------
-
-class LawClass p
--- instance LawClass p
-
-instance LawClass b => LawClass (a -> b)
+class Lawful (cxt :: * -> Constraint) where
+    laws :: (Testable b, cxt b) => Proxy cxt -> Proxy b -> [Law]
 
 data Law where
-    Law :: forall p. LawClass p => p -> Law
+    Law :: Testable p => LawName -> (p -> (n -> Bool)) -> Law
 
+type Testable p = (Arbitrary p, CoArbitrary p) --SC.Testable IO p, QC.Testable p)
 
-mkLaw :: LawClass p => String -> p -> Law
-mkLaw _ = Law
+--------------------
 
--- |
+mkLaw :: Testable p => Proxy a -> LawName -> (Proxy a -> p -> n -> Bool) -> Law
+mkLaw p law f = Law law (f p)
+
+--------------------
+
+-- class (Lawful cxt, cxt a) => Approximate cxt a where
+--     maxUnlawful :: cxt a => Proxy cxt -> Proxy a -> [ (LawName, Neighborhood a) ]
 --
--- See "Heterogenous Algebras" by Birkhoff and Lipson
-class cxt => Lawful cxt where
-    laws :: proxy cxt -> [Law]
+-- instance {-# OVERLAPPABLE #-} (Lawful cxt, cxt a) => Approximate cxt a where
+--     maxUnlawful _ _ = []
 
-instance Semigroup a => Lawful (Semigroup a) where
-    laws _ = [ mkLaw "associative" associative ]
-        where
-            associative :: a -> a -> a -> Logic a
-            associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
-
-instance Topology a => Lawful (Topology a) where
-    laws _ = [ mkLaw "inf" (law_Topology_inf @a) ]
+-- getMaxUnlawful :: LowerBounded a => proxy (cxt::Constraint) -> LawName -> a
+-- getMaxUnlawful p lawWanted = go $ maxUnlawful p
+--     where
+--         go [] = lowerBound
+--         go ((law,a):xs) = if law==lawWanted
+--             then a
+--             else go xs
 

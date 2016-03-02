@@ -19,6 +19,7 @@ import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck.Arbitrary
 
 import GHC.Generics
+import Generics.Deriving.Show
 import Debug.Trace
 
 ----------------------------------------
@@ -29,6 +30,13 @@ data Community a where
     NNil    :: Community a
     NCons   :: Poset a => a -> Community (Neighborhood a) -> Community a
     NBranch :: Community a -> Community b -> Community (a,b)
+
+-- FIXME:
+instance Poset a => Generic (Community a) where
+    type Rep (Community a) =
+        U1 :+: Rec0 a :*: Rec0 (Community (Neighborhood a)) -- :+: a :*: Community (Neighborhood a)
+
+-- instance (Show a, Show (Neighborhood a), Poset a) => GShow (Community a)
 
 instance Show (Community a) where
     show (NNil) = "NNil"
@@ -121,6 +129,10 @@ instance Topology Integer where
 instance Topology Int where
     type Neighborhood Int = Discrete (NonNegative Int)
     isNeighbor = fromMetric_isNeighbor
+
+instance Topology Char where
+    type Neighborhood Char = ()
+    isNeighbor a1 a2 _ = a1 P.== a2
 
 instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
@@ -232,9 +244,6 @@ instance Topology a => LowerBounded [a] where
 -- | FIXME:
 instance Topology a => Lattice [a]
 
-instance Topology a => Semigroup [a] where
-    (+) = (P.++)
-
 --------------------
 
 
@@ -266,98 +275,6 @@ instance Show (Community a -> Bool) where
 
 --------------------------------------------------------------------------------
 
-class Topology a => Semigroup a where
-
-    infixr 6 +
-    (+) :: a -> a -> a
-
-    neighborhood_Semigroup_associative :: a -> a -> a -> Community (Neighborhood a)
-    neighborhood_Semigroup_associative _ _ _ = lowerBound
-
---     plus :: (a,Neighborhood a) -> (a, Neighborhood a) -> (a,Neighborhood a)
---
---     neighborhood_Semigroup_error :: a -> a -> Neighborhood a
---     neighborhood_Semigroup_error _ _ = lowerBound
---
---     neighborhood_Semigroup_associative :: a -> a -> a -> Neighborhood a
---     neighborhood_Semigroup_associative a1 a2 a3
---         = sup (P.snd $ plus (a1+a2,neighborhood_Semigroup_error a1 a2) (a3,lowerBound))
---               (P.snd $ plus (a3+a2,neighborhood_Semigroup_error a3 a2) (a1,lowerBound))
-
-law_Semigroup_associative :: Semigroup a => a -> a -> a -> Logic a
-law_Semigroup_associative a1 a2 a3 = (a1+a2)+a3 == a1+(a2+a3)
-
-instance Semigroup () where
-    ()+()=()
-
-instance Semigroup Int where
-    (+) = (P.+)
-
-instance Semigroup Integer where
-    (+) = (P.+)
-
-instance Semigroup Float where
-    (+) = (P.+)
-    neighborhood_Semigroup_associative _ _ _ = NCons (Discrete $ NonNegative 2e-2) NNil
-
---------------------
-
--- class FAlgebra (cxt :: Constraint) where
---     type Ops cxt :: Type
---     ops :: cxt => proxy cxt -> [Ops cxt]
---
---     type Laws cxt :: Type
---     laws :: cxt => proxy cxt -> [Laws cxt]
---
--- instance Semigroup a => FAlgebra (Semigroup a) where
---     type Ops (Semigroup a) = a->a->a
---     ops _ = [(+)]
---
---     type Laws (Semigroup a) = a->a->a->Logic a
---     laws _ = [\a1 a2 a3 -> (a1+a2)+a3==a1+(a2+a3)]
-
--- class FAlgebra (cxt :: Type -> Constraint) where
---     ops0 :: cxt a => proxy cxt -> [a]
---     ops1 :: cxt a => proxy cxt -> [a -> a]
---     ops2 :: cxt a => proxy cxt -> [a -> a -> a]
---     ops3 :: cxt a => proxy cxt -> [a -> a -> a -> a]
---
---     ops0 _ = []
---     ops1 _ = []
---     ops2 _ = []
---     ops3 _ = []
---
---     laws3 :: cxt a => proxy cxt -> [a -> a -> a -> Logic a]
---
--- instance FAlgebra Semigroup where
---     ops2 _ = [(+)]
---     laws3 _ = [\a1 a2 a3 -> (a1+a2)+a3==a1+(a2+a3)]
---
--- instance FAlgebra Poset where
---     ops2 _ = [inf]
---
--- instance FAlgebra Lattice where
---     ops2 _ = [sup]
---
--- -- | Checks if a given function is a homomorphism with respect to the FAlgebra's binary operations.
--- -- Only checks on the given input variables.
--- --
--- -- FIXME:
--- -- True impredicativity could simplify the definition.
--- isHom2 :: forall proxy cxt a b.
---     ( FAlgebra cxt
---     , cxt a
---     , cxt b
---     , Topology b
---     ) => proxy cxt -> (a -> b) -> a -> a -> Logic b
--- isHom2 p f a1 a2 = P.foldl (&&) upperBound $
---     map (\(opa,opb) -> opb (f a1) (f a2) == f (opa a1 a2))
---     $ P.zip
---         (ops2 p :: [a -> a -> a])
---         (ops2 p :: [b -> b -> b])
-
---------------------
-
 class cxt => Lawful (cxt :: Constraint) where
     lawful :: proxy cxt -> Test
 
@@ -374,17 +291,17 @@ instance (Lawful cxt1, Lawful cxt2, Lawful cxt3) => Lawful (cxt1,cxt2,cxt3) wher
         , lawful (Proxy::Proxy cxt3)
         ]
 
-instance
-    ( Show a
-    , Arbitrary a
-    , Semigroup a
-    ) => Lawful (Semigroup a)
-        where
-    lawful _ = testGroup "Semigroup"
-        [ testProperty "associative" (\(a1::a) (a2::a) (a3::a) ->
-            (law_Semigroup_associative a1 a2 a3) (neighborhood_Semigroup_associative a1 a2 a3)
-            )
-        ]
+-- instance
+--     ( Show a
+--     , Arbitrary a
+--     , Semigroup a
+--     ) => Lawful (Semigroup a)
+--         where
+--     lawful _ = testGroup "Semigroup"
+--         [ testProperty "associative" (\(a1::a) (a2::a) (a3::a) ->
+--             (law_Semigroup_associative a1 a2 a3) (neighborhood_Semigroup_associative a1 a2 a3)
+--             )
+--         ]
 
 instance
     ( Show a
@@ -400,6 +317,7 @@ isLawful = defaultMain [lawful (undefined::proxy cxt)]
 
 --------------------
 
+{-
 class (cxt a, cxt b) => Sub (cxt :: * -> Constraint) a b where
     embed' :: proxy cxt -> a -> b
 
@@ -474,3 +392,4 @@ class Hom (cxt :: Type -> Constraint) where
 instance Hom Semigroup where
     type HomInput Semigroup a b = (a,a)
     law_hom _ f (a1,a2) = f (a1+a2) == f a1 + f a2
+-}

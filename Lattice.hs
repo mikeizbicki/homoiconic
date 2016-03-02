@@ -150,6 +150,7 @@ instance Heyting () where
 --------------------------------------------------------------------------------
 
 newtype NonNegative a = NonNegative a
+    deriving Show
 
 instance Poset a => Poset (NonNegative a) where
     inf (NonNegative a1) (NonNegative a2) = NonNegative $ inf a1 a2
@@ -163,6 +164,7 @@ instance (Num a, Poset a) => LowerBounded (NonNegative a) where
 --------------------
 
 newtype Discrete a = Discrete a
+    deriving Show
 
 instance Poset a => Poset (Discrete a) where
     inf (Discrete a1) (Discrete a2) = Discrete $ inf a1 a2
