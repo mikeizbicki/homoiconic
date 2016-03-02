@@ -127,6 +127,10 @@ instance Topology Float where
     type Neighborhood Float = Discrete (NonNegative Rational)
     isNeighbor a1 (a2,Discrete (NonNegative n)) = (toRational (P.abs (a1 P.- a2)) <= n) (Discrete $ NonNegative 0)
 
+instance Topology Double where
+    type Neighborhood Double = Discrete (NonNegative Rational)
+    isNeighbor a1 (a2,Discrete (NonNegative n)) = (toRational (P.abs (a1 P.- a2)) <= n) (Discrete $ NonNegative 0)
+
 instance Topology Rational where
     type Neighborhood Rational = Discrete (NonNegative Rational)
     isNeighbor a1 (a2,Discrete (NonNegative n)) = P.abs (a1 P.- a2) P.<= n

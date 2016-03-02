@@ -25,12 +25,16 @@ class Topology a => Semigroup a where
     (+) :: a -> a -> a
 
 instance Lawful Semigroup where
-    laws _ p = [ Law "associative" (associative p) ]
+    laws _ p = [ mkLaw "associative" (associative p) ]
 --     laws _ p = [ mkLaw' p "associative" associative' ]
 --     laws _ (Proxy::Proxy a) = [ Law "associative" (associative @a) ]
         where
-            associative :: Semigroup a => proxy a -> (a,a,a) -> Logic a
-            associative _ (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
+--             associative :: Semigroup a => proxy a -> (a,a,a) -> Logic a
+--             associative _ (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
+
+            associative :: (Show a, Semigroup a) => proxy a -> (a,a,a) -> Logic a
+            associative _ (a1,a2,a3) =  (a1+a2)+a3 == a1+(a2+a3)
+--             associative _ (a1,a2,a3) = trace ("  law_a3="++show a3) $ (a1+a2)+a3 == a1+(a2+a3)
 
 --             associative' :: Semigroup a => (a,a,a) -> Logic a
 --             associative' (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
@@ -44,7 +48,25 @@ instance Semigroup Float where
     (+) = (P.+)
 
 instance {-# OVERLAPS #-} Approximate Semigroup Float where
-    maxUnlawful _ _ = [("associative",Discrete $ NonNegative $ 2e-3)]
+    maxUnlawful _ _ = [ ErrorBound "associative" associator ]
+        where
+--             associator :: (Float) -> Neighborhood Float
+--             associator (a3) = trace ("unlaw_a3="++show a3) $ Discrete $ NonNegative $ 2e2
+
+            associator :: (Float,Float,Float) -> Neighborhood Float
+            associator (_,_,a3) = trace ("unlaw_a3="++show a3) $ Discrete $ NonNegative $ 2e-2
+
+--     maxUnlawful _ _ = [ ErrorBound "associative" $ \(a1::Float,a2::Float,a3::Float) -> Discrete $ NonNegative $ 2e-10]
+--     maxUnlawful _ _ = [ ErrorBound "associative" $ Discrete $ NonNegative $ 2e-3)]
+
+instance Semigroup Double where
+    (+) = (P.+)
+
+instance {-# OVERLAPS #-} Approximate Semigroup Double where
+    maxUnlawful _ _ = [ ErrorBound "associative" associator ]
+        where
+            associator :: (Float,Float,Float) -> Neighborhood Float
+            associator (_,_,a3) = trace ("a3="++show a3) $ Discrete $ NonNegative $ 2e-3
 
 --------------------
 
