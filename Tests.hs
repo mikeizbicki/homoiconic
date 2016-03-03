@@ -28,6 +28,8 @@ import qualified Test.Tasty.SmallCheck as SC
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable)
 
+import GHC.TypeLits (KnownSymbol(..),symbolVal)
+
 import Debug.Trace
 
 --------------------------------------------------------------------------------
@@ -37,7 +39,6 @@ type Testable p = (Show p, Arbitrary p, CoArbitrary p, Serial IO p, Typeable p)
 --------------------
 
 class Lawful (cxt :: * -> Constraint) (law::Symbol) where
-
     type LawInput cxt law a :: Type
     law :: cxt a => Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Logic a
     law _ _ _ _ = lowerBound
@@ -50,7 +51,13 @@ class
         where
     maxError :: Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Neighborhood a
 
-instance {-# OVERLAPPABLE #-} (Testable (LawInput cxt law a), Topology a, cxt a, Lawful cxt law) => Approximate cxt law a where
+instance {-# OVERLAPPABLE #-}
+    ( Testable (LawInput cxt law a)
+    , Topology a
+    , cxt a
+    , Lawful cxt law
+    ) => Approximate cxt law a
+        where
     maxError _ _ _ _ = lowerBound
 
 instance {-# OVERLAPS #-}
@@ -115,13 +122,15 @@ instance Splittable
 
 isLawful :: forall cxt law a.
     ( Approximate cxt law a
+    , KnownSymbol law
     ) => Proxy cxt
       -> Proxy law
       -> Proxy a
       -> IO ()
 isLawful pcxt plaw pa = defaultMain
-    $ localOption (QC.QuickCheckTests 100)
+    $ localOption (QC.QuickCheckTests 10000)
     $ localOption (SC.SmallCheckDepth 3)
-    $ testGroup "isLaw"
+    $ testGroup (symbolVal plaw)
         [ QC.testProperty ("quickcheck") (\p -> law pcxt plaw pa p (maxError pcxt plaw pa p))
+        , SC.testProperty ("smallcheck") (\p -> law pcxt plaw pa p (maxError pcxt plaw pa p))
         ]
