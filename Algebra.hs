@@ -24,6 +24,10 @@ class Topology a => Semigroup a where
     infixr 6 +
     (+) :: a -> a -> a
 
+instance Lawful' Semigroup "associative" where
+    type LawInput Semigroup "associative" a = (a,a,a)
+    law _ _ _ (a1,a2,a3) = (a1+a2)+a3 == a1+(a2+a3)
+
 instance Lawful Semigroup where
     laws _ p = [ mkLaw "associative" (associative p) ]
 --     laws _ p = [ mkLaw' p "associative" associative' ]
@@ -46,6 +50,9 @@ instance Lawful Semigroup where
 
 instance Semigroup Float where
     (+) = (P.+)
+
+instance {-# overlaps #-} Approximate' Semigroup "associative" Float where
+    maxError _ _ _ (a1,a2,a3) = Discrete $ NonNegative $ 2e-2
 
 instance {-# OVERLAPS #-} Approximate Semigroup Float where
     maxUnlawful _ _ = [ ErrorBound "associative" associator ]

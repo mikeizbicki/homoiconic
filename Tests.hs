@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DefaultSignatures #-}
 
 module Tests
     where
@@ -39,6 +40,35 @@ data Law cxt a where
 
 type Testable p = (Show p, Arbitrary p, CoArbitrary p, Serial IO p, Typeable p)
 -- type Testable p = (Show p, Arbitrary p, CoArbitrary p, SC.Testable IO p, QC.Testable p)
+
+--------------------
+
+class Lawful' (cxt :: * -> Constraint) (law::Symbol) where
+
+    type LawInput cxt law a :: Type
+    law :: cxt a => Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Logic a
+    law _ _ _ _ = lowerBound
+
+--     type Law1Input cxt law a = ()
+--     default law1 :: (cxt a, Law1Input cxt a ~ ()) => Proxy cxt -> Proxy a -> Law1Input cxt a -> Logic a
+
+class
+    ( Testable (LawInput cxt law a)
+    , cxt a
+    , Lawful' cxt law
+    ) => Approximate' cxt law a
+        where
+    maxError :: Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Neighborhood a
+
+instance {-# overlappable #-} (Testable (LawInput cxt law a), Topology a, cxt a, Lawful' cxt law) => Approximate' cxt law a where
+    maxError _ _ _ _ = lowerBound
+
+-- instance {-# overlaps #-}
+--     ( Approximate' cxt law a
+--     , Approximate' cxt law b
+--     ) => Approximate' cxt law (a,b)
+--         where
+--     maxError _ _ _
 
 --------------------
 
@@ -81,10 +111,10 @@ instance {-# OVERLAPS #-}
         (maxUnlawful p1 (Proxy::Proxy a))
         (maxUnlawful p1 (Proxy::Proxy b))
         where
-            go as@(ErrorBound lawa na:ar) bs@(ErrorBound lawb nb:br) = case P.compare lawa lawb of
---                 P.EQ -> ErrorBound lawa (\p -> (na p,nb p)):go ar br
-                P.LT -> ErrorBound lawa (\p -> (na p,lowerBound)):go ar bs
-                P.GT -> ErrorBound lawa (\p -> (lowerBound,nb p)):go as br
+--             go as@(ErrorBound lawa na:ar) bs@(ErrorBound lawb nb:br) = case P.compare lawa lawb of
+-- --                 P.EQ -> ErrorBound lawa (\p -> (na p,nb p)):go ar br
+--                 P.LT -> ErrorBound lawa (\p -> (na p,lowerBound)):go ar bs
+--                 P.GT -> ErrorBound lawa (\p -> (lowerBound,nb p)):go as br
 
             go (ErrorBound lawa na:ar) [] = ErrorBound lawa (\p -> (na p,lowerBound)):go ar []
             go [] (ErrorBound lawb nb:br) = ErrorBound lawb (\p -> (lowerBound,nb p)):go [] br
@@ -105,6 +135,30 @@ getMaxUnlawful pcxt pa lawWanted = go $ maxUnlawful pcxt pa
             else go xs
 
 --------------------------------------------------------------------------------
+
+isLawful' :: forall cxt law a.
+--     ( Testable a
+-- --     , Testable (Neighborhood a)
+--     , cxt a
+    ( Approximate' cxt law a
+    ) => Proxy cxt
+      -> Proxy law
+      -> Proxy a
+      -> IO ()
+isLawful' pcxt plaw pa = defaultMain
+    $ localOption (QC.QuickCheckTests 100)
+    $ localOption (SC.SmallCheckDepth 3)
+    $ testGroup "isLaw"
+        [ QC.testProperty ("quickcheck") (\p -> law pcxt plaw pa p (maxError pcxt plaw pa p))
+        ]
+--     $ testGroup "isLaw" $ go $ law pcxt plaw pa
+--     where
+--         go :: (LawInput cxt law a -> Logic a) -> [TestTree]
+--         go prop =
+--             [ QC.testProperty ("name"++" (QuickCheck)") (\p -> prop p $ maxError pcxt plaw pa)
+-- --             [ QC.testProperty ("name"++" (QuickCheck)") (prop _ )--)$ maxError pcxt plaw pa)
+-- --             , SC.testProperty (name++" (SmallCheck)") prop
+--             ]
 
 isLawful :: forall cxt a. (Testable a, Approximate cxt a) => Proxy cxt -> Proxy a -> IO ()
 isLawful pcxt pa = defaultMain
