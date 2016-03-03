@@ -7,6 +7,11 @@
 {-# LANGUAGE DefaultSignatures #-}
 
 module Tests
+    ( Lawful (..)
+    , Approximate (..)
+    , Testable
+    , isLawful
+    )
     where
 
 import qualified Prelude as P
@@ -27,156 +32,96 @@ import Debug.Trace
 
 --------------------------------------------------------------------------------
 
-type LawName = String
-
-class Lawful (cxt :: * -> Constraint) where
-    laws :: (Approximate cxt a, Testable a, cxt a) => Proxy cxt -> Proxy a -> [Law cxt a]
-
-data Law cxt a where
-    Law :: Testable p => LawName -> (p -> Bool) -> Law cxt a
---     Law :: (Approximate cxt a, Testable p) => LawName -> (p -> Bool) -> Law cxt a
---     Law :: (Approximate cxt a, Testable p) => LawName -> (p -> Logic a) -> Law cxt a
---     Law :: Testable p => LawName -> (p -> Logic a) -> Law a
-
 type Testable p = (Show p, Arbitrary p, CoArbitrary p, Serial IO p, Typeable p)
--- type Testable p = (Show p, Arbitrary p, CoArbitrary p, SC.Testable IO p, QC.Testable p)
 
 --------------------
 
-class Lawful' (cxt :: * -> Constraint) (law::Symbol) where
+class Lawful (cxt :: * -> Constraint) (law::Symbol) where
 
     type LawInput cxt law a :: Type
     law :: cxt a => Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Logic a
     law _ _ _ _ = lowerBound
 
---     type Law1Input cxt law a = ()
---     default law1 :: (cxt a, Law1Input cxt a ~ ()) => Proxy cxt -> Proxy a -> Law1Input cxt a -> Logic a
-
 class
     ( Testable (LawInput cxt law a)
     , cxt a
-    , Lawful' cxt law
-    ) => Approximate' cxt law a
+    , Lawful cxt law
+    ) => Approximate cxt law a
         where
     maxError :: Proxy cxt -> Proxy law -> Proxy a -> LawInput cxt law a -> Neighborhood a
 
-instance {-# overlappable #-} (Testable (LawInput cxt law a), Topology a, cxt a, Lawful' cxt law) => Approximate' cxt law a where
+instance {-# OVERLAPPABLE #-} (Testable (LawInput cxt law a), Topology a, cxt a, Lawful cxt law) => Approximate cxt law a where
     maxError _ _ _ _ = lowerBound
 
--- instance {-# overlaps #-}
---     ( Approximate' cxt law a
---     , Approximate' cxt law b
---     ) => Approximate' cxt law (a,b)
---         where
---     maxError _ _ _
-
---------------------
-
-mkLaw :: forall p cxt a.
-    ( Testable p
-    , Approximate cxt a
-    ) => LawName
-      -> (p -> Logic a)
-      -> Law cxt a
--- mkLaw law f = Law law ( \p -> f p lowerBound )
-mkLaw lawname f = Law lawname ( \p -> f p $ bound p)
-    where
---         bound = lowerBound
-        bound = case getMaxUnlawful (Proxy::Proxy cxt) (Proxy::Proxy a) lawname of
-            Just a -> a
---             Nothing -> error "blah"
-
---------------------
-
-data ErrorBound a where
-    ErrorBound :: (Typeable (Neighborhood a), Testable p) => LawName -> (p -> Neighborhood a) -> ErrorBound a
---     ErrorBound :: LawName -> Neighborhood a -> ErrorBound a
-
--- FIXME: the types are mildly broken for Topology2 above; this code partially fixes it
-class (Lawful cxt, Topology a, cxt a) => Approximate cxt a where
-    maxUnlawful :: cxt a => Proxy cxt -> Proxy a -> [ ErrorBound a ]
-
-instance {-# OVERLAPPABLE #-} (Lawful cxt, Topology a, cxt a) => Approximate cxt a where
-    maxUnlawful _ _ = []
-
 instance {-# OVERLAPS #-}
-    ( Approximate cxt a
-    , Approximate cxt b
-    , Typeable (Neighborhood a)
-    , Typeable (Neighborhood b)
+    ( Approximate cxt law a
+    , Approximate cxt law b
+    , Testable (LawInput cxt law (a,b))
     , cxt (a,b)
-    ) => Approximate cxt (a,b) where
-
-    maxUnlawful p1 _ = go
-        (maxUnlawful p1 (Proxy::Proxy a))
-        (maxUnlawful p1 (Proxy::Proxy b))
+    , Splittable (LawInput cxt law (a,b)) (LawInput cxt law a) (LawInput cxt law b)
+    ) => Approximate cxt law (a,b)
         where
---             go as@(ErrorBound lawa na:ar) bs@(ErrorBound lawb nb:br) = case P.compare lawa lawb of
--- --                 P.EQ -> ErrorBound lawa (\p -> (na p,nb p)):go ar br
---                 P.LT -> ErrorBound lawa (\p -> (na p,lowerBound)):go ar bs
---                 P.GT -> ErrorBound lawa (\p -> (lowerBound,nb p)):go as br
+    maxError pcxt plaw _ x =
+        ( maxError pcxt plaw (Proxy::Proxy a) xa
+        , maxError pcxt plaw (Proxy::Proxy b) xb
+        )
+        where
+            (xa,xb) = split x
 
-            go (ErrorBound lawa na:ar) [] = ErrorBound lawa (\p -> (na p,lowerBound)):go ar []
-            go [] (ErrorBound lawb nb:br) = ErrorBound lawb (\p -> (lowerBound,nb p)):go [] br
-            go [] [] = []
+class Splittable a b c | a -> b c where
+    split :: a -> (b,c)
 
-getMaxUnlawful :: forall p cxt a. (Testable p, Approximate cxt a)
-    => Proxy (cxt :: * -> Constraint)
-    -> Proxy a
-    -> LawName
-    -> Maybe (p -> Neighborhood a)
-getMaxUnlawful pcxt pa lawWanted = go $ maxUnlawful pcxt pa
-    where
-        go [] = Just lowerBound
-        go (ErrorBound law a:xs) = if law==lawWanted
-            then trace ("\ntypeRep="++show (typeRep (Proxy::Proxy (p -> Neighborhood a))))
-               $ trace ("\ntypeOf="++show (typeOf a))
-               $ cast a
-            else go xs
+instance Splittable
+    ((a1,b1),(a2,b2))
+    (a1,a2)
+    (b1,b2)
+        where
+    split ((a1,b1),(a2,b2))
+        = ((a1,a2),(b1,b2))
+
+instance Splittable
+    ((a1,b1),(a2,b2),(a3,b3))
+    (a1,a2,a3)
+    (b1,b2,b3)
+        where
+    split ((a1,b1),(a2,b2),(a3,b3))
+        = ((a1,a2,a3),(b1,b2,b3))
+
+instance Splittable
+    ((a1,b1),(a2,b2),(a3,b3),(a4,b4))
+    (a1,a2,a3,a4)
+    (b1,b2,b3,b4)
+        where
+    split ((a1,b1),(a2,b2),(a3,b3),(a4,b4))
+        = ((a1,a2,a3,a4),(b1,b2,b3,b4))
+
+instance Splittable
+    ((a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5))
+    (a1,a2,a3,a4,a5)
+    (b1,b2,b3,b4,b5)
+        where
+    split ((a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5))
+        = ((a1,a2,a3,a4,a5),(b1,b2,b3,b4,b5))
+
+instance Splittable
+    ((a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5),(a6,b6))
+    (a1,a2,a3,a4,a5,a6)
+    (b1,b2,b3,b4,b5,b6)
+        where
+    split ((a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5),(a6,b6))
+        = ((a1,a2,a3,a4,a5,a6),(b1,b2,b3,b4,b5,b6))
 
 --------------------------------------------------------------------------------
 
-isLawful' :: forall cxt law a.
---     ( Testable a
--- --     , Testable (Neighborhood a)
---     , cxt a
-    ( Approximate' cxt law a
+isLawful :: forall cxt law a.
+    ( Approximate cxt law a
     ) => Proxy cxt
       -> Proxy law
       -> Proxy a
       -> IO ()
-isLawful' pcxt plaw pa = defaultMain
+isLawful pcxt plaw pa = defaultMain
     $ localOption (QC.QuickCheckTests 100)
     $ localOption (SC.SmallCheckDepth 3)
     $ testGroup "isLaw"
         [ QC.testProperty ("quickcheck") (\p -> law pcxt plaw pa p (maxError pcxt plaw pa p))
         ]
---     $ testGroup "isLaw" $ go $ law pcxt plaw pa
---     where
---         go :: (LawInput cxt law a -> Logic a) -> [TestTree]
---         go prop =
---             [ QC.testProperty ("name"++" (QuickCheck)") (\p -> prop p $ maxError pcxt plaw pa)
--- --             [ QC.testProperty ("name"++" (QuickCheck)") (prop _ )--)$ maxError pcxt plaw pa)
--- --             , SC.testProperty (name++" (SmallCheck)") prop
---             ]
-
-isLawful :: forall cxt a. (Testable a, Approximate cxt a) => Proxy cxt -> Proxy a -> IO ()
-isLawful pcxt pa = defaultMain
-    $ localOption (QC.QuickCheckTests 100)
-    $ localOption (SC.SmallCheckDepth 3)
-    $ testGroup "isLaw" $ concat $ map go $ laws pcxt pa
-    where
---         go _ = []
---         go (Law _ _ ) = []
---         go (Law name prop) = []
-        go (Law name prop) =
-            [ QC.testProperty (name++" (QuickCheck)") prop
---             , SC.testProperty (name++" (SmallCheck)") prop
-            ]
---         go (Law name prop) =
---             [ QC.testProperty (name++" (QuickCheck)") (\p -> prop p bound)
---             , SC.testProperty (name++" (SmallCheck)") (\p -> prop p bound)
---             ]
---             where
---                 bound = getMaxUnlawful pcxt pa name
-
