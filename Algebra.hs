@@ -1,5 +1,6 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Algebra
     where
@@ -17,6 +18,7 @@ import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable,NonNegative)
 
 import Debug.Trace
+import GHC.Generics
 
 --------------------------------------------------------------------------------
 
@@ -56,8 +58,6 @@ instance Semigroup Int where
 instance Semigroup Integer where
     (+) = (P.+)
 
---------------------
-
 instance Topology a => Semigroup [a] where
     (+) = (P.++)
 
@@ -66,27 +66,20 @@ instance Topology a => Semigroup [a] where
 --     []    +ys     = ys
 --     xs    +[]     = xs
 
---------------------
-
-data Interval a where
-    Interval :: Topology a => a -> Neighborhood a -> Interval a
-
-instance Topology a => Topology (Interval a) where
-    type Neighborhood (Interval a) = Neighborhood a
-
-instance Semigroup (Interval Float) where
-    (Interval a1 n1)+(Interval a2 n2) = Interval (a1+a2) (sup n1 n2)
-
 ----------------------------------------
 
 class Semigroup a => Monoid a where
     zero :: a
 
-    neighborhood_Monoid_zero :: a -> Neighborhood a
-    neighborhood_Monoid_zero _ = lowerBound
+instance Lawful Monoid "idempotent" where
+    type LawInput Monoid "idempotent" a = a
+    law _ _ _ a = a+zero == a
+               && zero+a == a
 
-law_Monoid_zero :: Monoid a => a -> Logic a
-law_Monoid_zero a = zero+a == a
+instance Monoid Int     where zero = 0
+instance Monoid Integer where zero = 0
+instance Monoid Float   where zero = 0
+instance Monoid Double  where zero = 0
 
 class Monoid a => Group a where
     {-# MINIMAL negate | (-) #-}

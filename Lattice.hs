@@ -1,6 +1,7 @@
 module Lattice
     where
 
+import Prelude (fromInteger)
 import qualified Prelude as P
 import LocalPrelude
 
@@ -179,23 +180,23 @@ instance LowerBounded a => LowerBounded (Discrete a) where
 
 data HList (xs :: [a]) where
     HNil  :: HList '[]
-    HCons :: a -> HList xs -> HList (a:xs)
+    HCons :: a -> HList xs -> HList (a ': xs)
 
 instance Poset (HList '[]) where
     inf _ _ = HNil
 
-instance (Poset x, Poset (HList xs)) => Poset (HList (x:xs)) where
+instance (Poset x, Poset (HList xs)) => Poset (HList (x ': xs)) where
     inf (x1 `HCons` xs1) (x2 `HCons` xs2) = inf x1 x2 `HCons` inf xs1 xs2
 
 instance LowerBounded (HList '[]) where
     lowerBound = HNil
 
-instance (LowerBounded x, LowerBounded (HList xs)) => LowerBounded (HList (x:xs)) where
+instance (LowerBounded x, LowerBounded (HList xs)) => LowerBounded (HList (x ': xs)) where
     lowerBound = lowerBound `HCons` lowerBound
 
 instance Lattice (HList '[]) where
     sup _ _ = HNil
 
-instance (Lattice x, Lattice (HList xs)) => Lattice (HList (x:xs)) where
+instance (Lattice x, Lattice (HList xs)) => Lattice (HList (x ': xs)) where
     sup (x1 `HCons` xs1) (x2 `HCons` xs2) = sup x1 x2 `HCons` sup xs1 xs2
 

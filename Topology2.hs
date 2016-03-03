@@ -31,13 +31,6 @@ data Community a where
     NCons   :: Poset a => a -> Community (Neighborhood a) -> Community a
     NBranch :: Community a -> Community b -> Community (a,b)
 
--- FIXME:
-instance Poset a => Generic (Community a) where
-    type Rep (Community a) =
-        U1 :+: Rec0 a :*: Rec0 (Community (Neighborhood a)) -- :+: a :*: Community (Neighborhood a)
-
--- instance (Show a, Show (Neighborhood a), Poset a) => GShow (Community a)
-
 instance Show (Community a) where
     show (NNil) = "NNil"
     show (NCons a na) = "NCons (a) ("++show na++")"
@@ -52,7 +45,6 @@ instance Poset (Community a) where
 instance LowerBounded (Community a) where
     lowerBound = NNil
 
--- withNeighborhood :: Poset a => (Community a -> Bool) -> a -> (Community (Neighborhood a) -> Bool)
 withNeighborhood :: Poset a => (Community a -> Bool) -> a -> Logic a
 withNeighborhood f a = \cna -> f (NCons a cna)
 
@@ -104,12 +96,25 @@ class
     (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
 
 law_Topology_inf ::
-    Topology a => a -> a -> Community (Neighborhood a) -> Community (Neighborhood a) -> Bool
-law_Topology_inf a1 a2 c1 c2
-    = isNeighbor a1 a2 (c1 && c2)
-    ==> ( isNeighbor a1 a2 c1
-       || isNeighbor a1 a2 c2
-        )
+    Topology a => a -> a -> Community (Neighborhood a) -> Community (Neighborhood a) -> Logic Bool
+--     Topology a => a -> a -> Neighborhood a -> Neighborhood a -> Logic Bool
+law_Topology_inf a1 a2 c1 c2 = (f (c1&&c2) == (f c1 && f c2))
+--                             && (f (c1||c2) == (f c1 || f c2))
+--                             && (lowerBound == f lowerBound)
+    where
+        f = (a1==a2)
+
+-- law_Topology_inf ::
+--     Topology a => a -> a -> Community (Neighborhood a) -> Community (Neighborhood a) -> Bool
+-- law_Topology_inf a1 a2 c1 c2
+--     = isNeighbor a1 a2 (c1 && c2)
+--     ==> ( isNeighbor a1 a2 c1
+--        || isNeighbor a1 a2 c2
+--         )
+
+instance Topology Bool where
+    type Neighborhood Bool = ()
+    (==) a1 a2 = \_ -> a1 P.== a2
 
 instance Topology Float where
     type Neighborhood Float = Discrete (NonNegative Float)

@@ -11,6 +11,7 @@ module Tests
     , Approximate (..)
     , Testable
     , isLawful
+    , isLawful'
     )
     where
 
@@ -119,6 +120,13 @@ instance Splittable
         = ((a1,a2,a3,a4,a5,a6),(b1,b2,b3,b4,b5,b6))
 
 --------------------------------------------------------------------------------
+
+isLawful' :: forall cnst  (law::Symbol) (cxt::Type->Constraint)(a::Type).
+    ( cnst~(cxt a)
+    , Approximate cxt law a
+    , KnownSymbol law
+    ) => IO ()
+isLawful' = isLawful (Proxy::Proxy cxt) (Proxy::Proxy law) (Proxy::Proxy a)
 
 isLawful :: forall cxt law a.
     ( Approximate cxt law a

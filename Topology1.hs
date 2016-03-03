@@ -1,8 +1,9 @@
-{-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE TypeApplications #-}
+-- {-# LANGUAGE UndecidableSuperClasses #-}
+-- {-# LANGUAGE TypeApplications #-}
 module Topology1
     where
 
+import Prelude (fromInteger)
 import qualified Prelude as P
 import LocalPrelude
 import Lattice
@@ -21,8 +22,13 @@ ifThenElse f a1 a2 = case f lowerBound of
 
 ----------------------------------------
 
--- class LowerBounded (Neighborhood a) => Topology a where
-class (Topology (Neighborhood a), LowerBounded (Neighborhood a), Lattice (Neighborhood a)) => Topology a where
+class
+--     ( Topology (Neighborhood a)
+    ( LowerBounded (Neighborhood a)
+    , Lattice (Neighborhood a)
+    ) => Topology a
+        where
+
     type Neighborhood a
 
     {-# MINIMAL isNeighbor | (==) #-}
@@ -54,11 +60,15 @@ class (Topology (Neighborhood a), LowerBounded (Neighborhood a), Lattice (Neighb
     (>) :: Lattice a => a -> a -> Logic a
     (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
 
-law_Topology_equality :: Topology a => a -> Logic a
-law_Topology_equality a = a==a
-
--- law_Topology_compatibility :: Topology a =>
--- law_Topology_compatibility a1 a2
+-- NOTE:
+-- This law states that (==) is a Lattice and LowerBound homomorphism from (Neighborhood a) to Bool.
+-- This seems like the right level of strictness because these are the superclasses of Topology.
+law_Topology_inf :: Topology a => a -> a -> Neighborhood a -> Neighborhood a -> Logic Bool
+law_Topology_inf a1 a2 c1 c2 = (f (c1&&c2) == (f c1 && f c2))
+                            && (f (c1||c2) == (f c1 || f c2))
+                            && (lowerBound == f lowerBound)
+    where
+        f = (a1==a2)
 
 --------------------
 
@@ -84,7 +94,7 @@ law_Manifold_edge a n1 n2 = isNeighbor a (a', n1') && not (isNeighbor a (a', n2'
 
 -- law_getNeighborhood :: Manifold a => a -> a -> Logic a
 -- law_getNeighborhood a1 a2 = getNeighbor a1 (getNeighborhood a1 a2) == a2
-law_getNeighborhood :: Manifold a => a -> Neighborhood a -> Logic (Neighborhood a)
+law_getNeighborhood :: (Topology (Neighborhood a), Manifold a) => a -> Neighborhood a -> Logic (Neighborhood a)
 law_getNeighborhood a1 n1 = getNeighborhood a1 (getNeighbor a1 n1) == n1
 
 ----------------------------------------
@@ -120,8 +130,9 @@ instance Topology Char where
     type Neighborhood Char = ()
     (==) a1 a2 = \_ -> a1 P.== a2
 
-instance Topology (Discrete a) where
+instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
+    (==) (Discrete a1) (Discrete a2) _ = (a1==a2) lowerBound
 
 instance Topology Float where
     type Neighborhood Float = Discrete (NonNegative Rational)
