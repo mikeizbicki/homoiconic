@@ -134,6 +134,9 @@ instance Topology a => Topology (Discrete a) where
     type Neighborhood (Discrete a) = ()
     (==) (Discrete a1) (Discrete a2) _ = (a1==a2) lowerBound
 
+-- instance Topology a => Topology (NonNegative a) where
+--     type Neighborhood (NonNegative a) = Neighborhood a
+
 instance Topology Float where
     type Neighborhood Float = Discrete (NonNegative Rational)
     isNeighbor a1 (a2,Discrete (NonNegative n)) = (toRational (P.abs (a1 P.- a2)) <= n) (Discrete $ NonNegative 0)

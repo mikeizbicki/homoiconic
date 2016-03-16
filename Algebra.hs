@@ -86,6 +86,29 @@ instance HetAlgebra Topology where
     type HetRange Topology a = Logic a
     op _ (a1,a2) = a1==a2
 
+---------
+
+class P.Functor (FExpr cxt) => FAlg (cxt :: Type -> Constraint) where
+    data FExpr cxt a
+
+instance FAlg Topology where
+    data FExpr Topology a
+        = FExpr_Eq a a
+        | FExpr_Logic (Logic a)
+
+instance P.Functor (FExpr Topology) where
+--     fmap f (FExpr_Logic la) = la
+    fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
+
+instance FAlg Semigroup where
+    data FExpr Semigroup a
+        = FExpr_Top {-#UNPACK#-}!(FExpr Topology a)
+        | FExpr_plus a a
+
+instance P.Functor (FExpr Semigroup) where
+    fmap f (FExpr_Top e) = FExpr_Top $ P.fmap f e
+    fmap f (FExpr_plus a1 a2) = FExpr_plus (f a1) (f a2)
+
 --------------------
 
 data Mor (cxt::Type->Constraint) a b where
