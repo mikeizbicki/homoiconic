@@ -10,6 +10,7 @@ import LocalPrelude
 import Lattice
 import Tests
 import Topology1 hiding (Lawful (..), Semigroup (..), isLawful)
+import Union
 
 import Test.SmallCheck.Series hiding (NonNegative)
 import Test.Tasty
@@ -86,30 +87,123 @@ instance HetAlgebra Topology where
     type HetRange Topology a = Logic a
     op _ (a1,a2) = a1==a2
 
----------
+--------------------------------------------------------------------------------
 
-class P.Functor (FExpr cxt) => FAlg (cxt :: Type -> Constraint) where
+data Free f e = Free (f (Free f e)) | Pure e
+
+instance (Show e, Show (f e), Show (f (Free f e))) => Show (Free f e) where
+    show (Pure e) = show e
+    show (Free f) = show f
+
+-- instance Topology (Free f) where
+--     type Neighborhood (Free f) = ()
+
+--------------------
+
+type Expr cxt b = Free (FExpr cxt) b
+
+test1 :: Expr Semigroup Int
+test1 = Free $ FExpr_plus (Pure 5) (Pure 6)
+
+instance Metric Int where
+    type Scalar Int = Int
+
+test2 :: FExpr Hilbert Int
+test2 = FExpr_dp (3 :: Int)  3
+
+instance Topology b => Topology (Free f b) where
+    type Neighborhood (Free f b) = Neighborhood b
+instance Metric b => Metric (Free f b) where
+    type Scalar (Free f b) = Free f (Scalar b)
+instance Poset (Free f b)
+instance Topology b => Semigroup (Free f b)
+instance Topology b => Hilbert (Free f b)
+
+test3 :: Expr Hilbert Int
+test3 = Free ( FExpr_dp (Pure 3) ( Pure (4::Int) :: Free (FExpr Hilbert) Int ))
+
+--------------------
+
+class P.Functor (FExpr cxt) => FAlgebra (cxt :: Type -> Constraint) where
     data FExpr cxt a
+    runFExpr  :: cxt a  => FExpr cxt a -> a
+    showFExpr :: Show a => FExpr cxt a -> String
 
-instance FAlg Topology where
-    data FExpr Topology a
-        = FExpr_Eq a a
-        | FExpr_Logic (Logic a)
+--------------------
+
+class (Semigroup g) => Hilbert g where
+    (<>) :: g -> g -> Scalar g
+
+instance Hilbert Int where (<>) = (P.*)
+
+instance FAlgebra Hilbert where
+    data FExpr Hilbert a where
+        FExpr_SG :: !(FExpr Semigroup a) -> FExpr Hilbert a
+        FExpr_dp :: (Show a, Hilbert a) => a -> a -> FExpr Hilbert (Scalar a)
+        -- FIXME:
+        -- Does GADT encoding like this result in a lot of runtime overhead?
+
+    runFExpr (FExpr_SG e) = runFExpr e
+    runFExpr (FExpr_dp a1 a2) = a1<>a2
+
+    showFExpr (FExpr_SG e) = showFExpr e
+    showFExpr (FExpr_dp a1 a2) = show a1++"<>"++show a2
+
+-- FIXME:
+-- This can't be a Functor in Hask;
+-- but it can be a Functor in a constrained subcategory of Hask.
+instance P.Functor (FExpr Hilbert) where
+    fmap f (FExpr_SG e) = FExpr_SG $ P.fmap f e
+--     fmap f (FExpr_dp a1 a2) = FExpr_dp (f a1) (f a2)
+
+instance Show b => Show (FExpr Hilbert b) where
+    show (FExpr_SG g) = show g
+    show (FExpr_dp a1 a2) = "FExpr_dp "++show a1++" "++show a2
+
+--------------------
+
+instance FAlgebra Topology where
+    data FExpr Topology a where
+        FExpr_Eq :: (Show a, Topology a) => a -> a -> FExpr Topology (Logic a)
+
+    runFExpr (FExpr_Eq a1 a2) = a1==a2
+
+    showFExpr (FExpr_Eq a1 a2) = show a1++"=="++show a2
 
 instance P.Functor (FExpr Topology) where
---     fmap f (FExpr_Logic la) = la
-    fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
+--     fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
 
-instance FAlg Semigroup where
+instance Show b => Show (FExpr Topology b) where
+    show (FExpr_Eq a1 a2) = "FExpr_Eq "++show a1++" "++show a2
+
+instance (FAlgebra cxt, Topology a) => Topology (FExpr cxt a) where
+    type Neighborhood (FExpr cxt a) = Neighborhood a
+
+--------------------
+
+instance FAlgebra Semigroup where
     data FExpr Semigroup a
         = FExpr_Top {-#UNPACK#-}!(FExpr Topology a)
         | FExpr_plus a a
+        deriving (Show)
+    runFExpr (FExpr_plus a1 a2) = a1+a2
+    runFExpr (FExpr_Top e) = runFExpr e
+
+    showFExpr (FExpr_Top e) = showFExpr e
+    showFExpr (FExpr_plus a1 a2) = show a1++"<>"++show a2
 
 instance P.Functor (FExpr Semigroup) where
     fmap f (FExpr_Top e) = FExpr_Top $ P.fmap f e
     fmap f (FExpr_plus a1 a2) = FExpr_plus (f a1) (f a2)
 
---------------------
+-- instance Show b => Show (Expr Semigroup b) where
+--     show (Pure b) = show b
+--     show (Free f) = show f
+
+-- instance Semigroup (Expr Semigroup Int) where
+--     e1+e2 = Free $ Expr_f $ FExpr_plus e1 e2
+
+--------------------------------------------------------------------------------
 
 data Mor (cxt::Type->Constraint) a b where
     Mor :: (cxt a, cxt b)

@@ -8,6 +8,7 @@ module LocalPrelude
 --     , Char
     , String
     , Maybe(..)
+    , Either(..)
 
     , undefined
     , error
