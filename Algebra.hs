@@ -6,11 +6,12 @@ module Algebra
     where
 
 import qualified Prelude as P
-import LocalPrelude
+import LocalPrelude hiding ((.))
 import Lattice
 import Tests
 import Topology1 hiding (Lawful (..), Semigroup (..), isLawful)
 import Union
+import Category
 
 import Test.SmallCheck.Series hiding (NonNegative)
 import Test.Tasty
@@ -86,122 +87,6 @@ instance HetAlgebra Topology where
     type HetDomain Topology a = (a,a)
     type HetRange Topology a = Logic a
     op _ (a1,a2) = a1==a2
-
---------------------------------------------------------------------------------
-
-data Free f e = Free (f (Free f e)) | Pure e
-
-instance (Show e, Show (f e), Show (f (Free f e))) => Show (Free f e) where
-    show (Pure e) = show e
-    show (Free f) = show f
-
--- instance Topology (Free f) where
---     type Neighborhood (Free f) = ()
-
---------------------
-
-type Expr cxt b = Free (FExpr cxt) b
-
-test1 :: Expr Semigroup Int
-test1 = Free $ FExpr_plus (Pure 5) (Pure 6)
-
-instance Metric Int where
-    type Scalar Int = Int
-
-test2 :: FExpr Hilbert Int
-test2 = FExpr_dp (3 :: Int)  3
-
-instance Topology b => Topology (Free f b) where
-    type Neighborhood (Free f b) = Neighborhood b
-instance Metric b => Metric (Free f b) where
-    type Scalar (Free f b) = Free f (Scalar b)
-instance Poset (Free f b)
-instance Topology b => Semigroup (Free f b)
-instance Topology b => Hilbert (Free f b)
-
-test3 :: Expr Hilbert Int
-test3 = Free ( FExpr_dp (Pure 3) ( Pure (4::Int) :: Free (FExpr Hilbert) Int ))
-
---------------------
-
-class P.Functor (FExpr cxt) => FAlgebra (cxt :: Type -> Constraint) where
-    data FExpr cxt a
-    runFExpr  :: cxt a  => FExpr cxt a -> a
-    showFExpr :: Show a => FExpr cxt a -> String
-
---------------------
-
-class (Semigroup g) => Hilbert g where
-    (<>) :: g -> g -> Scalar g
-
-instance Hilbert Int where (<>) = (P.*)
-
-instance FAlgebra Hilbert where
-    data FExpr Hilbert a where
-        FExpr_SG :: !(FExpr Semigroup a) -> FExpr Hilbert a
-        FExpr_dp :: (Show a, Hilbert a) => a -> a -> FExpr Hilbert (Scalar a)
-        -- FIXME:
-        -- Does GADT encoding like this result in a lot of runtime overhead?
-
-    runFExpr (FExpr_SG e) = runFExpr e
-    runFExpr (FExpr_dp a1 a2) = a1<>a2
-
-    showFExpr (FExpr_SG e) = showFExpr e
-    showFExpr (FExpr_dp a1 a2) = show a1++"<>"++show a2
-
--- FIXME:
--- This can't be a Functor in Hask;
--- but it can be a Functor in a constrained subcategory of Hask.
-instance P.Functor (FExpr Hilbert) where
-    fmap f (FExpr_SG e) = FExpr_SG $ P.fmap f e
---     fmap f (FExpr_dp a1 a2) = FExpr_dp (f a1) (f a2)
-
-instance Show b => Show (FExpr Hilbert b) where
-    show (FExpr_SG g) = show g
-    show (FExpr_dp a1 a2) = "FExpr_dp "++show a1++" "++show a2
-
---------------------
-
-instance FAlgebra Topology where
-    data FExpr Topology a where
-        FExpr_Eq :: (Show a, Topology a) => a -> a -> FExpr Topology (Logic a)
-
-    runFExpr (FExpr_Eq a1 a2) = a1==a2
-
-    showFExpr (FExpr_Eq a1 a2) = show a1++"=="++show a2
-
-instance P.Functor (FExpr Topology) where
---     fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
-
-instance Show b => Show (FExpr Topology b) where
-    show (FExpr_Eq a1 a2) = "FExpr_Eq "++show a1++" "++show a2
-
-instance (FAlgebra cxt, Topology a) => Topology (FExpr cxt a) where
-    type Neighborhood (FExpr cxt a) = Neighborhood a
-
---------------------
-
-instance FAlgebra Semigroup where
-    data FExpr Semigroup a
-        = FExpr_Top {-#UNPACK#-}!(FExpr Topology a)
-        | FExpr_plus a a
-        deriving (Show)
-    runFExpr (FExpr_plus a1 a2) = a1+a2
-    runFExpr (FExpr_Top e) = runFExpr e
-
-    showFExpr (FExpr_Top e) = showFExpr e
-    showFExpr (FExpr_plus a1 a2) = show a1++"<>"++show a2
-
-instance P.Functor (FExpr Semigroup) where
-    fmap f (FExpr_Top e) = FExpr_Top $ P.fmap f e
-    fmap f (FExpr_plus a1 a2) = FExpr_plus (f a1) (f a2)
-
--- instance Show b => Show (Expr Semigroup b) where
---     show (Pure b) = show b
---     show (Free f) = show f
-
--- instance Semigroup (Expr Semigroup Int) where
---     e1+e2 = Free $ Expr_f $ FExpr_plus e1 e2
 
 --------------------------------------------------------------------------------
 
@@ -380,3 +265,270 @@ class Ring a => Field a where
 --         , inv = undefined
 --         }
 
+class (Semigroup a, Semigroup (Scalar a)) => Module a where
+    (.*) :: a -> Scalar a -> a
+
+class Module a => Hilbert a where
+    (<>) :: a -> a -> Scalar a
+
+--------------------------------------------------------------------------------
+
+data Free f e = Free (f (Free f e)) | Pure e
+
+natFree' :: Functor cat f => (forall a. cat (f a) (g a)) -> Free f e -> Free g e
+natFree' = undefined
+
+natFree :: Functor Hask f => (forall a. f a -> g a) -> Free f e -> Free g e
+natFree _ (Pure e) = Pure e
+natFree x (Free f) = Free $ x $ fmap (natFree x) f
+
+instance (Show e, Show (f (Free f e))) => Show (Free f e) where
+    show (Pure e) = show e
+    show (Free f) = show f
+
+-- instance Metric (Free f e) where
+type instance Scalar (Free f e) = Free f (Scalar e)
+type instance Scalar Int = Int
+
+--------------------
+
+data SCatT cat a b = SCatT (cat a b) (cat (Scalar a) (Scalar b))
+
+instance Category cat => Category (SCatT cat) where
+    type ValidObject (SCatT cat) a = (ValidObject cat a, ValidObject cat (Scalar a))
+    id = SCatT id id
+    (SCatT f1 g1).(SCatT f2 g2) = SCatT (f1.f2) (g1.g2)
+
+class Concrete cat => SCat cat where
+    getScalarF :: cat a b -> Scalar a -> Scalar b
+
+instance SCat (SCatT Hask) where
+    getScalarF (SCatT _ g) = g
+
+class Category cat => Concrete cat where
+    toHask :: cat a b -> a -> b
+
+instance Concrete Hask where
+    toHask = (P.$)
+
+instance Concrete cat => Concrete (SCatT cat) where
+    toHask (SCatT f g) = toHask f
+
+--------------------
+
+type Expr cat cxt b = Free (FExpr cat cxt) b
+type Expr' cxt b = forall cat. Free (FExpr cat cxt) b
+
+class Functor cat (FExpr cat cxt) => FAlgebra cat (cxt :: Type -> Constraint) where
+    data FExpr cat cxt a
+    runFExpr :: cxt a => FExpr cat cxt a -> a
+
+--------------------
+
+instance Concrete cat => FAlgebra cat Semigroup where
+    data FExpr cat Semigroup a = FExpr_plus a a
+    runFExpr (FExpr_plus a1 a2) = a1+a2
+
+instance Show a => Show (FExpr cat Semigroup a) where
+    show (FExpr_plus a1 a2) = "("++show a1++"+"++show a2++")"
+
+instance Concrete cat => Functor cat (FExpr cat Semigroup) where
+    fmap f (FExpr_plus a1 a2) = FExpr_plus (toHask f a1) (toHask f a2)
+
+--------------------
+
+instance SCat cat => FAlgebra cat Module where
+    data FExpr cat Module a where
+        FExpr_Module :: FExpr cat Semigroup a -> FExpr cat Module a
+        FExpr_mul    :: Scalar a -> a -> FExpr cat Module a
+
+    runFExpr (FExpr_Module a) = runFExpr a
+    runFExpr (FExpr_mul sa a) = a.*sa
+
+instance (Show (Scalar a), Show a) => Show (FExpr cat Module a) where
+    show (FExpr_Module e) = show e
+    show (FExpr_mul sa a) = "("++show a++".*"++show sa++")"
+
+instance SCat cat => Functor cat (FExpr cat Module) where
+    fmap f (FExpr_Module a) = FExpr_Module $ fmap f a
+    fmap f (FExpr_mul sa a) = FExpr_mul (getScalarF f sa) (toHask f a)
+
+test1 :: Expr cat Module Int
+test1 = Free (FExpr_mul
+    (Free (FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
+    (Free (FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
+    )
+
+test1a :: Expr cat Semigroup Int
+test1a = Free (FExpr_plus (Pure 3) (Pure 1))
+
+test1b :: Concrete cat => Expr cat Module Int
+test1b = natFree' (undefined :: cat (FExpr cat Semigroup a) (FExpr cat Module a)) test1a
+
+test1c :: Expr Hask Module Int
+test1c = natFree FExpr_Module test1a
+
+--------------------
+
+instance SCat cat => FAlgebra cat Hilbert where
+    data FExpr cat Hilbert a where
+        FExpr_Hilbert :: FExpr cat Module a -> FExpr cat Hilbert a
+        FExpr_dp      :: (Show a, Hilbert a) => a -> a -> FExpr cat Hilbert (Scalar a)
+    runFExpr (FExpr_Hilbert e) = runFExpr e
+    runFExpr (FExpr_dp a1 a2) = a1<>a2
+
+instance (Show a, Show (Scalar a)) => Show (FExpr cat Hilbert a) where
+    show (FExpr_Hilbert e) = show e
+    show (FExpr_dp a1 a2) = "("++show a1++"<>"++show a2++")"
+
+instance SCat cat => Functor cat (FExpr cat Hilbert) where
+    fmap f (FExpr_Hilbert e) = FExpr_Hilbert $ fmap f e
+    -- FIXME
+
+test2 :: Expr' Hilbert Int
+test2 = Free (FExpr_Hilbert $ FExpr_mul
+    (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
+    (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
+    )
+
+-- test3 :: Expr' Hilbert Int
+-- test3 = Free (FExpr_Hilbert $ FExpr_mul
+--     (Free (FExpr_dp (Pure 3 :: Expr' Hilbert Int) (Pure 1)))
+--     (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
+--     )
+
+--------------------
+
+-- instance FAlgebra Group where
+--     data FExpr Group a
+--         = FExpr_Group (FExpr Semigroup a)
+--         | FExpr_negate a
+--         | FExpr_minus a a
+--         deriving Show
+--     runFExpr (FExpr_negate a)    = negate a
+--     runFExpr (FExpr_minus a1 a2) = a1-a2
+--
+-- instance Functor Hask (FExpr Group) where
+--     fmap f (FExpr_negate a) = FExpr_negate $ f a
+--     fmap f (FExpr_minus a1 a2) = FExpr_minus (f a1) (f a2)
+
+--------------------------------------------------------------------------------
+
+{-
+-- instance Topology (Free f) where
+--     type Neighborhood (Free f) = ()
+
+--------------------
+
+type Expr cxt b = Free (FExpr cxt) b
+
+test1 :: Expr Semigroup Int
+test1 = Free $ FExpr_plus (Pure 5) (Pure 6)
+
+instance Metric Int where
+    type Scalar Int = Int
+
+test2 :: FExpr Hilbert Int
+test2 = FExpr_dp (3 :: Int)  3
+
+instance Topology b => Topology (Free f b) where
+    type Neighborhood (Free f b) = Neighborhood b
+instance Metric b => Metric (Free f b) where
+    type Scalar (Free f b) = Free f (Scalar b)
+instance Poset (Free f b)
+instance Topology b => Semigroup (Free f b)
+instance Topology b => Hilbert (Free f b)
+
+test3 :: Expr Hilbert Int
+test3 = Free ( FExpr_dp (Pure 3) ( Pure (4::Int) :: Free (FExpr Hilbert) Int ))
+
+--------------------
+
+class Functor (CxtHask cxt) (FExpr cxt) => FAlgebra (cxt :: Type -> Constraint) where
+    data FExpr cxt a
+    runFExpr  :: cxt a  => FExpr cxt a -> a
+    showFExpr :: Show a => FExpr cxt a -> String
+
+--------------------
+
+class (Semigroup g) => Hilbert g where
+    (<>) :: g -> g -> Scalar g
+
+instance Hilbert Int where (<>) = (P.*)
+
+instance FAlgebra Hilbert where
+    data FExpr Hilbert a where
+        FExpr_SG :: !(FExpr Semigroup a) -> FExpr Hilbert a
+        FExpr_dp :: (Show a, Hilbert a) => a -> a -> FExpr Hilbert (Scalar a)
+        -- FIXME:
+        -- Does GADT encoding like this result in a lot of runtime overhead?
+
+    runFExpr (FExpr_SG e) = runFExpr e
+    runFExpr (FExpr_dp a1 a2) = a1<>a2
+
+    showFExpr (FExpr_SG e) = showFExpr e
+    showFExpr (FExpr_dp a1 a2) = show a1++"<>"++show a2
+
+instance Functor (CxtHask Hilbert) (FExpr Hilbert) where
+
+-- FIXME:
+-- This can't be a Functor in Hask;
+-- but it can be a Functor in a constrained subcategory of Hask.
+instance P.Functor (FExpr Hilbert) where
+    fmap f (FExpr_SG e) = FExpr_SG $ P.fmap f e
+--     fmap f (FExpr_dp a1 a2) = FExpr_dp (f a1) (f a2)
+
+instance Show b => Show (FExpr Hilbert b) where
+    show (FExpr_SG g) = show g
+    show (FExpr_dp a1 a2) = "FExpr_dp "++show a1++" "++show a2
+
+--------------------
+
+instance FAlgebra Topology where
+    data FExpr Topology a where
+        FExpr_Eq :: (Topology a) => a -> a -> FExpr Topology (Logic a)
+
+    runFExpr (FExpr_Eq a1 a2) = a1==a2
+
+--     showFExpr (FExpr_Eq a1 a2) = show a1++"=="++show a2
+
+instance Functor (CxtHask Topology) (FExpr Topology) where
+    fmap (CxtT (f::a->b)) (FExpr_Eq (a1::a) a2) = _ ((FExpr_Eq::b->b->FExpr Topology (Logic b)) (f a1)) --FExpr_Eq (f a1::b) (f a2::b)
+
+instance P.Functor (FExpr Topology) where
+--     fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
+
+instance Show b => Show (FExpr Topology b) where
+--     show (FExpr_Eq a1 a2) = "FExpr_Eq "++show a1++" "++show a2
+
+instance (FAlgebra cxt, Topology a) => Topology (FExpr cxt a) where
+    type Neighborhood (FExpr cxt a) = Neighborhood a
+
+--------------------
+
+instance FAlgebra Semigroup where
+    data FExpr Semigroup a
+        = FExpr_Top {-#UNPACK#-}!(FExpr Topology a)
+        | FExpr_plus a a
+        deriving (Show)
+    runFExpr (FExpr_plus a1 a2) = a1+a2
+    runFExpr (FExpr_Top e) = runFExpr e
+
+    showFExpr (FExpr_Top e) = showFExpr e
+    showFExpr (FExpr_plus a1 a2) = show a1++"<>"++show a2
+
+-- FIXME:
+instance Functor (CxtHask Semigroup) (FExpr Semigroup) where
+--     fmap f (FExpr_Top e) = FExpr_Top $ fmap f e
+
+instance P.Functor (FExpr Semigroup) where
+    fmap f (FExpr_Top e) = FExpr_Top $ P.fmap f e
+    fmap f (FExpr_plus a1 a2) = FExpr_plus (f a1) (f a2)
+
+-- instance Show b => Show (Expr Semigroup b) where
+--     show (Pure b) = show b
+--     show (Free f) = show f
+
+-- instance Semigroup (Expr Semigroup Int) where
+--     e1+e2 = Free $ Expr_f $ FExpr_plus e1 e2
+    -}

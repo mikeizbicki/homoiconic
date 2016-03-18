@@ -9,54 +9,96 @@ module Category
     where
 
 import qualified Prelude as P
-import LocalPrelude
+import LocalPrelude hiding ((.))
 import Lattice
-import Topology2
+-- import Tests
+import Topology1
 
--- import Test.Framework
--- import Test.Framework.Runners.Console
--- import Test.Framework.Providers.QuickCheck2
--- import Test.QuickCheck.Arbitrary
+-- class Lawful (cxt :: * -> Constraint) (law::Symbol) where
+class Lawful2 (cxt :: (k -> k -> Type) -> Constraint) (law::Symbol) where
+    type LawDomain cxt law (a::k->k->Type) (b::k) :: Type
+    type LawRange  cxt law (a::k->k->Type) (b::k) :: Type
+    type LawCxt    cxt law (a::k->k->Type) (b::k) :: Constraint
+    law :: LawCxt cxt law a b
+        => Proxy cxt
+        -> Proxy law
+        -> Proxy a
+        -> Proxy b
+        -> LawDomain cxt law a b
+        -> LawRange  cxt law a b
+--     law _ _ _ _ = lowerBound
 
-import GHC.Generics
-import Debug.Trace
+-- class Lawful (cxt :: Constraint) (law::Symbol) where
+--     type LawDomain' cxt law :: Type
+--     type LawRange'  cxt law :: Type
+--     law':: cxt
+--         => Proxy cxt
+--         -> Proxy law
+--         -> LawDomain' cxt law
+--         -> LawRange'  cxt law
 
-----------------------------------------
+--------------------------------------------------------------------------------
 
-class Category (cat :: obj -> obj -> *) where
-    type ValidObject cat (a::obj) :: Constraint
+class Category (cat :: k -> k -> Type) where
+    type ValidObject cat (a::k) :: Constraint
+    type ValidObject cat (a::k) = ()
 
     id :: ValidObject cat a => cat a a
     (.) :: cat b c -> cat a b -> cat a c
 
-data Cat cxt a b where
-    Cat :: (cxt a, a~b) => a -> Cat cxt a b
+-- instance Category cat => Lawful (Category cat) "id" where
+--     law' _ _ = id.id == id
 
-instance Category (Cat P.Monoid) where
-    type ValidObject (Cat P.Monoid) a = P.Monoid a
-    id = Cat P.mempty
-    (Cat a1).(Cat a2) = Cat (a1 `P.mappend` a2)
+instance Lawful2 Category "id" where
+    type LawDomain Category "id" a b = () -- a b b
+    type LawRange  Category "id" a b = Logic (a b b)
+    type LawCxt    Category "id" a b = (Topology (a b b), ValidObject a b, Category a)
+    law _ _ (Proxy::Proxy a) (Proxy::Proxy (b::k)) () = id.id == (id::a b b)
+
+instance Lawful2 Category "." where
+    type LawDomain Category "." a b = (a b b, a b b, a b b)
+    type LawRange  Category "." a b = Logic (a b b)
+    type LawCxt    Category "." a b = (Topology (a b b), Category a)
+    law _ _ (Proxy::Proxy (a::k->k->Type)) (Proxy::Proxy (b::k)) (f1,f2,f3::a b b)
+        = (f1.f2).f3 == f1.(f2.f3)
 
 ----------------------------------------
 
-class Cxt k => Cxt (a::k)
+class Category cat => Functor cat (f::Type->Type) where
+    -- FIXME:
+    -- the real type signature should be
+    -- fmap :: cat a b -> cat (f a) (f b)
+    -- but instances with this signature are *super* difficult to make
+    fmap :: cat a b -> f a -> f b
 
-instance Cxt Type
+instance Functor Hask (Hask a) where
+    fmap = P.fmap
 
-instance Cxt Nat
+--------------------------------------------------------------------------------
 
-data App cxt a where
---     AppCon :: {-forall cxt a. cxt a =>-} a -> App cxt a
-    AppCon :: forall cxt a. cxt a => a -> App cxt a
+type Hask = (->)
 
-data (a::App cxt ka) ~> (b::App cxt kb) where
---     Id :: forall cxt a. cxt a => (a -> a) -> (AppCon a ~> AppCon a)
---     Id :: forall cxt a. (a -> a) -> (App cxt a ~> App cxt a)
---     Arrow :: forall a b cxt c d. (cxt a, cxt b) => (a -> b) -> ((c::App cxt) ~> (d::App cxt))
+instance Category Hask where
+    id = P.id
+    (.) = (P..)
 
-instance Category (~>) where
-    type ValidObject (~>) a = ()
---     id = AppCon P.id
+----------------------------------------
 
--- class Foo (a :: Test cxt) where
---     foo :: a -> a
+type CxtHask = CxtT Hask
+type TopHask = CxtT Hask Topology
+type PosHask = CxtT Hask Poset
+type LatHask = CxtT Hask Lattice
+
+data CxtT (cat :: k -> k -> Type) cxt (a::k) (b::k) where
+    CxtT :: (cxt a, cxt b) => cat a b -> CxtT cat cxt a b
+
+instance Category cat => Category (CxtT cat cxt) where
+    type ValidObject (CxtT cat cxt) a = (cxt a, ValidObject cat a)
+    id = CxtT id
+    (CxtT f1).(CxtT f2) = CxtT $ f1.f2
+
+instance (Functor cat (cat a), Category cat) => Functor (CxtT cat cxt) (CxtT cat cxt a) where
+    fmap (CxtT f) (CxtT g) = CxtT (fmap f g)
+
+proveCxtT :: (cxt a, cxt b) => cat a b -> CxtT cat cxt a b
+proveCxtT = CxtT

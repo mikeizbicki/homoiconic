@@ -202,8 +202,9 @@ instance (Topology a, Topology b) => Topology (Top a b) where
 
 --------------------------------------------------------------------------------
 
+type family Scalar a
+
 class (Poset (Scalar a), Topology a) => Metric a where
-    type Scalar a
     distance :: a -> a -> Scalar a
 
 orderTopology_isNeighbor ::
