@@ -24,42 +24,6 @@ import GHC.Generics
 
 --------------------------------------------------------------------------------
 
-class (cxt a, cxt b) => Sub (cxt :: Type -> Constraint) a b where
-    embed :: Proxy cxt -> a -> b
-
-instance cxt a => Sub cxt a a where
-    embed _ = P.id
-
-instance Sub Semigroup Integer Rational where
-    embed _ = P.toRational
-
-class Pointed a where point :: a
-instance (Semigroup a, Semigroup b, Pointed b) => Sub Semigroup a (a,b) where
-    embed _ a = (a,point)
-
-instance (Semigroup a, Semigroup b, Pointed a) => Sub Semigroup b (a,b) where
-    embed _ b = (point,b)
-
--- class a <: b where
---     embed :: a -> b
---
--- instance a <: a where
---     embed = P.id
---
--- instance Integer <: Rational where
---     embed =
---
--- instance (a,b) <: a where
---     embed = P.fst
---
--- instance (a,b) <: b where
---     embed = P.snd
---
--- instance a <: Maybe a where
---     embed = Just
-
---------------------------------------------------------------------------------
-
 type (><) a b = Prod a b
 class (cxt1 a, cxt2 a) => Prod cxt1 cxt2 a
 instance (cxt1 a, cxt2 a) => Prod cxt1 cxt2 a
@@ -286,38 +250,17 @@ instance (Show e, Show (f (Free f e))) => Show (Free f e) where
     show (Pure e) = show e
     show (Free f) = show f
 
+instance Num a => Num (Expr cat cxt a) where
+    fromInteger n = Pure $ fromInteger n
+
 -- instance Metric (Free f e) where
-type instance Scalar (Free f e) = Free f (Scalar e)
+-- type instance Scalar (Free f e) = Free f (Scalar e)
 type instance Scalar Int = Int
 
 --------------------
 
-data SCatT cat a b = SCatT (cat a b) (cat (Scalar a) (Scalar b))
-
-instance Category cat => Category (SCatT cat) where
-    type ValidObject (SCatT cat) a = (ValidObject cat a, ValidObject cat (Scalar a))
-    id = SCatT id id
-    (SCatT f1 g1).(SCatT f2 g2) = SCatT (f1.f2) (g1.g2)
-
-class Concrete cat => SCat cat where
-    getScalarF :: cat a b -> Scalar a -> Scalar b
-
-instance SCat (SCatT Hask) where
-    getScalarF (SCatT _ g) = g
-
-class Category cat => Concrete cat where
-    toHask :: cat a b -> a -> b
-
-instance Concrete Hask where
-    toHask = (P.$)
-
-instance Concrete cat => Concrete (SCatT cat) where
-    toHask (SCatT f g) = toHask f
-
---------------------
-
 type Expr cat cxt b = Free (FExpr cat cxt) b
-type Expr' cxt b = forall cat. Free (FExpr cat cxt) b
+type Expr' cxt b = forall cat. Expr cat cxt b
 
 class Functor cat (FExpr cat cxt) => FAlgebra cat (cxt :: Type -> Constraint) where
     data FExpr cat cxt a
@@ -335,13 +278,19 @@ instance Show a => Show (FExpr cat Semigroup a) where
 instance Concrete cat => Functor cat (FExpr cat Semigroup) where
     fmap f (FExpr_plus a1 a2) = FExpr_plus (toHask f a1) (toHask f a2)
 
+instance Topology (Expr cat Semigroup a) where
+    type Neighborhood (Expr cat Semigroup a) = ()
+    -- FIXME
+
+instance Semigroup (Expr cat Semigroup a) where
+    e1+e2 = Free $ FExpr_plus e1 e2
+
 --------------------
 
 instance SCat cat => FAlgebra cat Module where
     data FExpr cat Module a where
         FExpr_Module :: FExpr cat Semigroup a -> FExpr cat Module a
         FExpr_mul    :: Scalar a -> a -> FExpr cat Module a
-
     runFExpr (FExpr_Module a) = runFExpr a
     runFExpr (FExpr_mul sa a) = a.*sa
 
@@ -353,22 +302,49 @@ instance SCat cat => Functor cat (FExpr cat Module) where
     fmap f (FExpr_Module a) = FExpr_Module $ fmap f a
     fmap f (FExpr_mul sa a) = FExpr_mul (getScalarF f sa) (toHask f a)
 
+instance Topology (Expr cat Module a) where
+    type Neighborhood (Expr cat Module a) = ()
+    -- FIXME
+
+instance Semigroup (Expr cat Module a) where
+    e1+e2 = Free $ FExpr_Module $ FExpr_plus e1 e2
+
+instance Module (Expr cat Module a) where
+    e1.*e2 = Free $ FExpr_mul e2 e1
+
+--------------------
+
 test1 :: Expr cat Module Int
 test1 = Free (FExpr_mul
     (Free (FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
     (Free (FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
     )
 
+sg2mod :: Expr cat Semigroup a -> Expr cat Module a
+sg2mod (Pure e) = Pure e
+sg2mod (Free (FExpr_plus a1 a2)) = Free $ FExpr_Module $ FExpr_plus (sg2mod a1) (sg2mod a2)
+-- sg2mod (Free f) = Free $ FExpr_Module $ _ -- sg2mod f
+
 test1a :: Expr cat Semigroup Int
 test1a = Free (FExpr_plus (Pure 3) (Pure 1))
 
 test1b :: Concrete cat => Expr cat Module Int
-test1b = natFree' (undefined :: cat (FExpr cat Semigroup a) (FExpr cat Module a)) test1a
+test1b = sg2mod test1a
+-- test1b = natFree' q test1a
+-- test1b = natFree' (undefined :: cat (FExpr cat Semigroup a) (FExpr cat Module a)) test1a
+
+q :: Concrete cat => cat (FExpr cat Semigroup a) (FExpr cat Module a)
+q = proveConcrete FExpr_Module
+
+proveConcrete :: Concrete cat => (a -> b) -> cat a b
+proveConcrete = undefined
 
 test1c :: Expr Hask Module Int
 test1c = natFree FExpr_Module test1a
 
 --------------------
+
+-- newtype WrappedScalar a = WrappedScalar { unwrapScalar :: Scalar a }
 
 instance SCat cat => FAlgebra cat Hilbert where
     data FExpr cat Hilbert a where
@@ -385,17 +361,34 @@ instance SCat cat => Functor cat (FExpr cat Hilbert) where
     fmap f (FExpr_Hilbert e) = FExpr_Hilbert $ fmap f e
     -- FIXME
 
+instance Topology (Expr cat Hilbert a) where
+    type Neighborhood (Expr cat Hilbert a) = ()
+    -- FIXME
+
+instance Semigroup (Expr cat Hilbert a) where
+    e1+e2 = Free $ FExpr_Hilbert $ FExpr_Module $ FExpr_plus e1 e2
+
+instance Module (Expr cat Hilbert a) where
+    e1.*e2 = Free $ FExpr_Hilbert $ FExpr_mul e2 e1
+
+instance
+    ( Show a
+    , Show (Scalar a)
+    , Scalar (Scalar a)~Scalar a
+    ) => Hilbert (Free (FExpr cat Hilbert) a)
+        where
+    e1<>e2 = Free $ FExpr_dp e1 e2
+
+type instance Scalar (Expr cat cxt a) = Expr cat cxt (Scalar a)
+
 test2 :: Expr' Hilbert Int
 test2 = Free (FExpr_Hilbert $ FExpr_mul
     (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
     (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
     )
 
--- test3 :: Expr' Hilbert Int
--- test3 = Free (FExpr_Hilbert $ FExpr_mul
---     (Free (FExpr_dp (Pure 3 :: Expr' Hilbert Int) (Pure 1)))
---     (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
---     )
+test3 :: Expr' Hilbert Int
+test3 = 1.*2<>(3+2 :: Expr' Hilbert Int)
 
 --------------------
 
@@ -411,6 +404,46 @@ test2 = Free (FExpr_Hilbert $ FExpr_mul
 -- instance Functor Hask (FExpr Group) where
 --     fmap f (FExpr_negate a) = FExpr_negate $ f a
 --     fmap f (FExpr_minus a1 a2) = FExpr_minus (f a1) (f a2)
+
+-- class (FAlgebra cat cxt1, FAlgebra cat cxt2) => SubAlgebra cat cxt1 cxt2 where
+--     liftFAlg :: FExpr cat cxt1 a -> FExpr cat cxt2 a
+--
+-- instance FAlgebra cat cxt1 => SubAlgebra cat cxt1 cxt1 where
+--     liftFAlg = id
+
+-- class (cxt a, cxt b) => Sub (cxt :: Type -> Constraint) a b where
+--     embed :: Proxy cxt -> a -> b
+--
+-- instance cxt a => Sub cxt a a where
+--     embed _ = P.id
+--
+-- instance Sub Semigroup Integer Rational where
+--     embed _ = P.toRational
+--
+-- class Pointed a where point :: a
+-- instance (Semigroup a, Semigroup b, Pointed b) => Sub Semigroup a (a,b) where
+--     embed _ a = (a,point)
+--
+-- instance (Semigroup a, Semigroup b, Pointed a) => Sub Semigroup b (a,b) where
+--     embed _ b = (point,b)
+
+class a <: b where
+    embed :: a -> b
+
+instance a <: a where
+    embed = P.id
+
+instance Integer <: Rational where
+    embed = P.toRational
+
+instance (a,b) <: a where
+    embed = P.fst
+
+instance (a,b) <: b where
+    embed = P.snd
+
+instance a <: Maybe a where
+    embed = Just
 
 --------------------------------------------------------------------------------
 

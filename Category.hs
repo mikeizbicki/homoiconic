@@ -102,3 +102,27 @@ instance (Functor cat (cat a), Category cat) => Functor (CxtT cat cxt) (CxtT cat
 
 proveCxtT :: (cxt a, cxt b) => cat a b -> CxtT cat cxt a b
 proveCxtT = CxtT
+
+--------------------------------------------------------------------------------
+
+data SCatT cat a b = SCatT (cat a b) (cat (Scalar a) (Scalar b))
+
+instance Category cat => Category (SCatT cat) where
+    type ValidObject (SCatT cat) a = (ValidObject cat a, ValidObject cat (Scalar a))
+    id = SCatT id id
+    (SCatT f1 g1).(SCatT f2 g2) = SCatT (f1.f2) (g1.g2)
+
+class Concrete cat => SCat cat where
+    getScalarF :: cat a b -> Scalar a -> Scalar b
+
+instance SCat (SCatT Hask) where
+    getScalarF (SCatT _ g) = g
+
+class Category cat => Concrete cat where
+    toHask :: cat a b -> a -> b
+
+instance Concrete Hask where
+    toHask = (P.$)
+
+instance Concrete cat => Concrete (SCatT cat) where
+    toHask (SCatT f g) = toHask f
