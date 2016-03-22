@@ -232,8 +232,15 @@ class Ring a => Field a where
 class (Semigroup a, Semigroup (Scalar a)) => Module a where
     (.*) :: a -> Scalar a -> a
 
+type instance Scalar (a,b) = Scalar b
+instance (Module a, Module b, Scalar a~Scalar b) => Module (a,b) where
+    (a,b).*s = (a.*s,b.*s)
+
 class Module a => Hilbert a where
     (<>) :: a -> a -> Scalar a
+
+instance (Hilbert a, Hilbert b, Scalar a~Scalar b) => Hilbert (a,b) where
+    (a1,b1)<>(a2,b2) = a1<>a2 + b1<>b2
 
 --------------------------------------------------------------------------------
 
@@ -250,145 +257,245 @@ instance (Show e, Show (f (Free f e))) => Show (Free f e) where
     show (Pure e) = show e
     show (Free f) = show f
 
-instance Num a => Num (Expr cat cxt a) where
-    fromInteger n = Pure $ fromInteger n
-
 -- instance Metric (Free f e) where
 -- type instance Scalar (Free f e) = Free f (Scalar e)
 type instance Scalar Int = Int
 
 --------------------
 
-type Expr cat cxt b = Free (FExpr cat cxt) b
-type Expr' cxt b = forall cat. Expr cat cxt b
+data Phylum
+    = Id
+    | Scalar
+    | App Phylum Phylum
 
-class Functor cat (FExpr cat cxt) => FAlgebra cat (cxt :: Type -> Constraint) where
-    data FExpr cat cxt a
-    runFExpr :: cxt a => FExpr cat cxt a -> a
+type family GetPhylum (f::Phylum) a
+type instance GetPhylum Id a = a
+type instance GetPhylum 'Scalar a = Scalar a
+type instance GetPhylum (App p1 p2) a = GetPhylum p1 (GetPhylum p2 a)
+
+type family CxtPhylum (f::Phylum) a where
+    CxtPhylum (App p1 p2) a = GetPhylum p2 a
+    CxtPhylum p a           = GetPhylum p  a
+
+class {-Functor cat (FExpr cat cxt) =>-}
+    FAlgebra
+        (cat :: Type -> Type -> Type)
+        (cxt :: Type -> Constraint)
+        where
+    data FExpr cat cxt (f::Phylum) (a::Type)
+    type FCxt  cat cxt (f::Phylum) (a::Type) :: Constraint
+    runFExpr :: FCxt cat cxt f a => FExpr cat cxt f a -> GetPhylum f a
+--     runFExpr :: (cxt a, cxt (GetPhylum f a)) => FExpr cat cxt f a -> GetPhylum f a
+--     runFExpr :: cxt (GetPhylum f a) => FExpr cat cxt f a -> GetPhylum f a
+
+----------
+
+-- type instance Scalar (Expr cat cxt f a) = Expr cat cxt f (Scalar a)
+-- type instance Scalar (Expr cat cxt f a) = Expr cat cxt 'Scalar a
+-- type instance Scalar (Expr cat cxt Id a) = Expr cat cxt 'Scalar a
+-- type instance Scalar (Expr cat cxt 'Scalar a) = Expr cat cxt 'Scalar a
+
+-- type instance Scalar (Expr cat cxt f a) = Expr cat cxt (App 'Scalar f) a
+type instance Scalar (Expr cat cxt f a) = Scalar_ (Expr cat cxt f a)
+type family Scalar_ a where
+    Scalar_ (Expr cat cxt (App 'Scalar f) a) = (Expr cat cxt (App 'Scalar f) a)
+    Scalar_ (Expr cat cxt              f  a) = (Expr cat cxt (App 'Scalar f) a)
+
+type Expr cat cxt f b = Free (FExpr cat cxt f) b
+type Expr' cxt f b = forall cat. Expr cat cxt f b
+
+instance Num a => Num (Expr cat cxt f a) where
+    fromInteger n = Pure $ fromInteger n
 
 --------------------
 
 instance Concrete cat => FAlgebra cat Semigroup where
-    data FExpr cat Semigroup a = FExpr_plus a a
+    data FExpr cat Semigroup f a where
+        FExpr_plus
+            :: GetPhylum f a
+            -> GetPhylum f a
+            -> FExpr cat Semigroup f a
+    type FCxt cat Semigroup f a = Semigroup (GetPhylum f a)
     runFExpr (FExpr_plus a1 a2) = a1+a2
 
-instance Show a => Show (FExpr cat Semigroup a) where
+instance Show (GetPhylum f a) => Show (FExpr cat Semigroup f a) where
     show (FExpr_plus a1 a2) = "("++show a1++"+"++show a2++")"
 
-instance Concrete cat => Functor cat (FExpr cat Semigroup) where
-    fmap f (FExpr_plus a1 a2) = FExpr_plus (toHask f a1) (toHask f a2)
+-- instance Concrete cat => Functor cat (FExpr cat Semigroup f) where
+--     fmap f (FExpr_plus a1 a2) = FExpr_plus (toHask f a1) (toHask f a2)
 
-instance Topology (Expr cat Semigroup a) where
-    type Neighborhood (Expr cat Semigroup a) = ()
+instance Topology (Expr cat Semigroup f a) where
+    type Neighborhood (Expr cat Semigroup f a) = ()
     -- FIXME
 
-instance Semigroup (Expr cat Semigroup a) where
+instance
+    ( GetPhylum f (Expr cat Semigroup f a) ~ Expr cat Semigroup f a
+    ) => Semigroup (Expr cat Semigroup f a)
+        where
     e1+e2 = Free $ FExpr_plus e1 e2
+
 
 --------------------
 
 instance SCat cat => FAlgebra cat Module where
-    data FExpr cat Module a where
-        FExpr_Module :: FExpr cat Semigroup a -> FExpr cat Module a
-        FExpr_mul    :: Scalar a -> a -> FExpr cat Module a
+    data FExpr cat Module f a where
+        FExpr_Module
+            :: FExpr cat Semigroup f a
+            -> FExpr cat Module f a
+        FExpr_mul
+            :: GetPhylum 'Scalar (GetPhylum f a)
+            -> GetPhylum f a
+            -> FExpr cat Module f a
+    type FCxt cat Module f a = Module (GetPhylum f a)
     runFExpr (FExpr_Module a) = runFExpr a
     runFExpr (FExpr_mul sa a) = a.*sa
 
-instance (Show (Scalar a), Show a) => Show (FExpr cat Module a) where
+instance
+    ( Show (Scalar a)
+    , Show (GetPhylum f a)
+    , Show (GetPhylum 'Scalar (GetPhylum f a))
+    , Show a
+    ) => Show (FExpr cat Module f a)
+        where
     show (FExpr_Module e) = show e
     show (FExpr_mul sa a) = "("++show a++".*"++show sa++")"
 
-instance SCat cat => Functor cat (FExpr cat Module) where
-    fmap f (FExpr_Module a) = FExpr_Module $ fmap f a
-    fmap f (FExpr_mul sa a) = FExpr_mul (getScalarF f sa) (toHask f a)
+-- instance SCat cat => Functor cat (FExpr cat Module f) where
+--     fmap f (FExpr_Module a) = FExpr_Module $ fmap f a
+--     fmap f (FExpr_mul sa a) = FExpr_mul (getScalarF f sa) (toHask f a)
 
-instance Topology (Expr cat Module a) where
-    type Neighborhood (Expr cat Module a) = ()
+instance Topology (Expr cat Module f a) where
+    type Neighborhood (Expr cat Module f a) = ()
     -- FIXME
 
-instance Semigroup (Expr cat Module a) where
+instance
+    ( GetPhylum f (Expr cat Module f a) ~ Expr cat Module f a
+    ) => Semigroup (Expr cat Module f a)
+        where
     e1+e2 = Free $ FExpr_Module $ FExpr_plus e1 e2
 
-instance Module (Expr cat Module a) where
+instance
+    ( GetPhylum f (Expr cat Module f a) ~ Expr cat Module f a
+    , Semigroup (Scalar_ (Expr cat Module f a))
+    ) => Module (Expr cat Module f a)
+        where
     e1.*e2 = Free $ FExpr_mul e2 e1
 
 --------------------
 
-test1 :: Expr cat Module Int
+test1 :: Expr cat Module Id Int
 test1 = Free (FExpr_mul
     (Free (FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
     (Free (FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
     )
 
-sg2mod :: Expr cat Semigroup a -> Expr cat Module a
+test1' :: Expr cat Module Id Int
+test1' = 1.*(2.*4+2).*5+3
+
+sg2mod :: Expr cat Semigroup Id a -> Expr cat Module Id a
 sg2mod (Pure e) = Pure e
 sg2mod (Free (FExpr_plus a1 a2)) = Free $ FExpr_Module $ FExpr_plus (sg2mod a1) (sg2mod a2)
 -- sg2mod (Free f) = Free $ FExpr_Module $ _ -- sg2mod f
 
-test1a :: Expr cat Semigroup Int
+test1a :: Expr cat Semigroup Id Int
 test1a = Free (FExpr_plus (Pure 3) (Pure 1))
 
-test1b :: Concrete cat => Expr cat Module Int
+test1b :: Concrete cat => Expr cat Module Id Int
 test1b = sg2mod test1a
 -- test1b = natFree' q test1a
 -- test1b = natFree' (undefined :: cat (FExpr cat Semigroup a) (FExpr cat Module a)) test1a
 
-q :: Concrete cat => cat (FExpr cat Semigroup a) (FExpr cat Module a)
-q = proveConcrete FExpr_Module
-
-proveConcrete :: Concrete cat => (a -> b) -> cat a b
-proveConcrete = undefined
-
-test1c :: Expr Hask Module Int
-test1c = natFree FExpr_Module test1a
+-- q :: Concrete cat => cat (FExpr cat Semigroup a) (FExpr cat Module a)
+-- q = proveConcrete FExpr_Module
+--
+-- proveConcrete :: Concrete cat => (a -> b) -> cat a b
+-- proveConcrete = undefined
+--
+-- test1c :: Expr Hask Module Id Int
+-- test1c = natFree FExpr_Module test1a
 
 --------------------
 
--- newtype WrappedScalar a = WrappedScalar { unwrapScalar :: Scalar a }
+newtype WrappedScalar a = WrappedScalar { unwrapScalar :: Scalar a }
 
 instance SCat cat => FAlgebra cat Hilbert where
-    data FExpr cat Hilbert a where
-        FExpr_Hilbert :: FExpr cat Module a -> FExpr cat Hilbert a
-        FExpr_dp      :: (Show a, Hilbert a) => a -> a -> FExpr cat Hilbert (Scalar a)
+    data FExpr cat Hilbert f a where
+        FExpr_Hilbert
+            :: FExpr cat Module f a
+            -> FExpr cat Hilbert f a
+        FExpr_dp
+            :: GetPhylum f a
+            -> GetPhylum f a
+            -> FExpr cat Hilbert (App 'Scalar f) a
+    type FCxt cat Hilbert f a = (Module (GetPhylum f a), FCxt_Hilbert f a)
+--     type FCxt cat Hilbert f a = Hilbert (GetPhylum f a)
+--             :: a
+--             -> a
+--             -> FExpr cat Hilbert 'Scalar a
+--     type FCxt cat Hilbert f a = (Hilbert a, Hilbert (GetPhylum f a))
     runFExpr (FExpr_Hilbert e) = runFExpr e
     runFExpr (FExpr_dp a1 a2) = a1<>a2
 
-instance (Show a, Show (Scalar a)) => Show (FExpr cat Hilbert a) where
-    show (FExpr_Hilbert e) = show e
-    show (FExpr_dp a1 a2) = "("++show a1++"<>"++show a2++")"
-
-instance SCat cat => Functor cat (FExpr cat Hilbert) where
-    fmap f (FExpr_Hilbert e) = FExpr_Hilbert $ fmap f e
-    -- FIXME
-
-instance Topology (Expr cat Hilbert a) where
-    type Neighborhood (Expr cat Hilbert a) = ()
-    -- FIXME
-
-instance Semigroup (Expr cat Hilbert a) where
-    e1+e2 = Free $ FExpr_Hilbert $ FExpr_Module $ FExpr_plus e1 e2
-
-instance Module (Expr cat Hilbert a) where
-    e1.*e2 = Free $ FExpr_Hilbert $ FExpr_mul e2 e1
+type family FCxt_Hilbert f a where
+    FCxt_Hilbert (App 'Scalar f) a = Hilbert (GetPhylum f a)
+    FCxt_Hilbert f               a = Hilbert (GetPhylum f a)
 
 instance
     ( Show a
     , Show (Scalar a)
-    , Scalar (Scalar a)~Scalar a
-    ) => Hilbert (Free (FExpr cat Hilbert) a)
+    , Show (GetPhylum Id a)
+    , Show (Scalar (GetPhylum Id a))
+    ) => Show (FExpr cat Hilbert Id a)
+        where
+    show (FExpr_Hilbert e) = show e
+
+instance
+    ( Show (GetPhylum f a)
+    , Show a
+    , Show (Scalar a)
+    , Show (Scalar (GetPhylum f a))
+    , Scalar (Scalar (GetPhylum f a))~Scalar (GetPhylum f a)
+    ) => Show (FExpr cat Hilbert (App 'Scalar f) a) where
+    show (FExpr_Hilbert e) = show e
+    show (FExpr_dp a1 a2) = "("++show a1++"<>"++show a2++")"
+
+-- instance SCat cat => Functor cat (FExpr cat Hilbert f) where
+--     fmap f (FExpr_Hilbert e) = FExpr_Hilbert $ fmap f e
+--     -- FIXME
+
+instance Topology (Expr cat Hilbert f a) where
+    type Neighborhood (Expr cat Hilbert f a) = ()
+    -- FIXME
+
+instance
+    ( GetPhylum f (Expr cat Hilbert f a) ~ Expr cat Hilbert f a
+    ) => Semigroup (Expr cat Hilbert f a) where
+    e1+e2 = Free $ FExpr_Hilbert $ FExpr_Module $ FExpr_plus e1 e2
+
+instance
+    ( GetPhylum f (Expr cat Hilbert f a) ~ Expr cat Hilbert f a
+    , Semigroup (Scalar_ (Expr cat Hilbert f a))
+    ) => Module (Expr cat Hilbert f a)
+        where
+    e1.*e2 = Free $ FExpr_Hilbert $ FExpr_mul e2 e1
+
+instance
+--     ( Show a
+--     , Show (Scalar a)
+--     , Scalar (Scalar a)~Scalar a
+    ( Scalar (GetPhylum f (Expr cat Hilbert ('App 'Scalar f) a)) ~ Expr cat Hilbert (App 'Scalar f) a
+    ,         GetPhylum f (Expr cat Hilbert ('App 'Scalar f) a)  ~ Expr cat Hilbert (App 'Scalar f) a
+    ) => Hilbert (Expr cat Hilbert (App 'Scalar f) a)
+--     ) => Hilbert (Expr cat Hilbert 'Scalar a)
         where
     e1<>e2 = Free $ FExpr_dp e1 e2
 
-type instance Scalar (Expr cat cxt a) = Expr cat cxt (Scalar a)
+testHilbert :: Expr Hask Hilbert (App 'Scalar Id) Int
+testHilbert = (1+(21.*6).*(7.*8))<>(2<>(1 :: Expr Hask Hilbert (App 'Scalar Id) Int))
 
-test2 :: Expr' Hilbert Int
-test2 = Free (FExpr_Hilbert $ FExpr_mul
-    (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 3) (Pure 1)))
-    (Free (FExpr_Hilbert $ FExpr_Module $ FExpr_plus (Pure 4) (Pure 2)))
-    )
+testHilbert2 = Pure (1,1) <> (Pure (1+1,2) <> (Pure (3,4) :: Expr Hask Hilbert (App 'Scalar Id) (Int,Int)))
 
-test3 :: Expr' Hilbert Int
-test3 = 1.*2<>(3+2 :: Expr' Hilbert Int)
+testHilbert3 = 1+2 :: Expr Hask Hilbert Id Int
 
 --------------------
 
