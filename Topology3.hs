@@ -96,3 +96,18 @@ instance Eq Bool where
 instance Topology Bool where
     type Neighborhood Bool = ()
     evalLogic b _ = b
+
+instance Eq Int where
+    type Logic Int = Int -> Bool
+    (a1==a2) i = distance a1 a2 P.<= i
+
+----------------------------------------
+
+type family Scalar a
+
+class Metric a where
+    distance :: a -> a -> Scalar a
+
+type instance Scalar Int = Int
+instance Metric Int where
+    distance a1 a2 = P.abs $ a1 P.- a2

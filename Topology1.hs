@@ -22,6 +22,8 @@ ifThenElse f a1 a2 = case f lowerBound of
 
 ----------------------------------------
 
+-- The paper "Two decades of fuzzy topology: basic ideas, notions, and results"
+-- by A.P. Shostak gives a good overview of how this type of "fuzzy" topology could work.
 class
 --     ( Topology (Neighborhood a)
     ( LowerBounded (Neighborhood a)

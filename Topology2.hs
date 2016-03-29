@@ -58,6 +58,8 @@ mkTuple (NCons a cna) = (a,cna)
 
 --------------------
 
+-- The paper "Two decades of fuzzy topology: basic ideas, notions, and results"
+-- by A.P. Shostak gives a good overview of how this type of "fuzzy" topology could work.
 class
     ( Topology (Neighborhood a)
     , LowerBounded (Neighborhood a)

@@ -291,7 +291,7 @@ type family GetPhylum (p::Phylum) a
 type instance GetPhylum Id a = a
 type instance GetPhylum 'Scalar a = Scalar a
 type instance GetPhylum 'Logic a = Logic a
-type instance GetPhylum 'Elem a = Elem a
+-- type instance GetPhylum 'Elem a = Elem a
 type instance GetPhylum (App p1 p2) a = GetPhylum p1 (GetPhylum p2 a)
 
 type family CxtPhylum (f::Phylum) a where
@@ -303,14 +303,20 @@ type family Scalar_ a where
     Scalar_ (Expr cxt (App 'Scalar f) a) = (Expr cxt (App 'Scalar f) a)
     Scalar_ (Expr cxt              f  a) = (Expr cxt (App 'Scalar f) a)
 
-type Expr cxt f a = Free (FExpr cxt f) a
+type Expr cxt p a = Free (FExpr cxt p) a
 
 instance Num a => Num (Expr cxt f a) where
     fromInteger n = Pure $ fromInteger n
 
 --------------------
 
-data PCatT (p::Phylum) cat a b = PCatT (cat a b) (GetPhylum p a -> GetPhylum p b)
+type family PsCatT (ps::[Phylum]) cat where
+    PsCatT '[]    cat = cat
+    PsCatT (p:ps) cat = PCatT p (PsCatT ps cat)
+
+data PCatT (p::Phylum) cat a b = PCatT
+    {-#UNPACK#-}!(cat a b)
+    {-#UNPACK#-}!(GetPhylum p a -> GetPhylum p b)
 
 instance Category cat => Category (PCatT p cat) where
     type ValidObject (PCatT p cat) a = ValidObject cat a
@@ -333,8 +339,84 @@ class {-Functor cat (FExpr cxt) =>-} FAlgebra (cxt :: Type -> Constraint) where
     type FCxt  cxt (p::Phylum) (a::Type) :: Constraint
     runFExpr :: FCxt cxt p a => FExpr cxt p a -> GetPhylum p a
 
+cataHask :: Functor Hask f => (f a -> a) -> Free f a -> a
+cataHask g (Pure a) = a
+cataHask g (Free f) = g $ fmap (cataHask g) f
+
+cata :: (Concrete cat, Functor cat f) => cat (f a) a -> cat (Free f a) a
+cata g = g . fmap (cata g) . unFix
+    where
+--         fmap :: cat a b -> cat (f a) (f b)
+--         fmap = undefined
+
+        unFix :: cat (Free f a) (f (Free f a))
+        unFix = undefined
+
+-- cata2 :: Functor cat f => cat (f a) a -> Free f a -> a
+-- cata2 g (Pure a) = a
+-- cata2 g (Free f) = g $ fmap (_ $ cata2 g) f
+
+-- evalExpr :: (cxt~Semigroup, FAlgebra cxt) => Expr cxt p a -> GetPhylum p a
+-- evalExpr (Free (FExpr_plus a1 a2)) = evalExpr a1 + evalExpr a2
+
+-- cata g (Pure a) = a
+-- cata g (Free f) = toHask g $ fmap (cata g) f
+
+-- eval :: Expr cxt p a -> a
+-- eval = _ . fmap eval . _
+
+-- eval ::
+--     ( Functor Hask (FExpr cxt p)
+--     , FAlgebra cxt
+--     , GetPhylum p (GetPhylum p a) ~ GetPhylum p a
+--     , FCxt cxt p (GetPhylum p a)
+--     ) => Expr cxt p a -> a
+-- -- eval (Pure a) = a
+-- eval (Free e) = runFExpr $ fmap eval e
+
 --------------------
 
+instance FAlgebra Semigroup where
+    data FExpr Semigroup p a where
+        FExpr_Semigroup
+            :: {-#UNPACK#-}!(FExpr Topology p a)
+            -> FExpr Semigroup p a
+        FExpr_plus
+            :: GetPhylum p a
+            -> GetPhylum p a
+            -> FExpr Semigroup p a
+    type FCxt Semigroup p a = Semigroup (GetPhylum p a)
+--     runFExpr (FExpr_Semigroup e) = runFExpr e
+    runFExpr (FExpr_plus a1 a2) = a1+a2
+
+instance Show (GetPhylum p a) => Show (FExpr Semigroup p a) where
+    show (FExpr_plus a1 a2) = "("++show a1++"+"++show a2++")"
+
+instance (cat~Hask, PCat p cat) => Functor cat (FExpr Semigroup p) where
+    fmap f (FExpr_plus a1 a2) = FExpr_plus (getPhylumArrow p f a1) (getPhylumArrow p f a2)
+        where
+            p = (Proxy::Proxy p)
+
+-- instance Category cat => Functor (PCatT p cat) (FExpr Semigroup p) where
+--     fmap f = PCatT _f1 _f2 --undefined undefined -- FExpr_plus (getPhylumArrow p f a1) (getPhylumArrow p f a2)
+--         where
+--             f2 :: GetPhylum p (FExpr Semigroup p a) -> GetPhylum p (FExpr Semigroup p b)
+-- --             f2 = undefined
+-- --             f1 = undefined
+--             f2 (FExpr_plus a1 a2) = undefined
+-- --             f2  = undefined
+-- --
+-- --             p = (Proxy::Proxy p)
+
+instance
+    ( GetPhylum p (Expr Semigroup p a) ~ Expr Semigroup p a
+    ) => Semigroup (Expr Semigroup p a)
+        where
+    e1+e2 = Free $ FExpr_plus e1 e2
+
+--------------------
+
+{-
 instance FAlgebra Topology where
     data FExpr Topology p a where
         FExpr_eq
@@ -350,6 +432,7 @@ type family FCxt_Topology p a where
 instance Show (GetPhylum p a) => Show (FExpr Topology (App 'Logic p) a) where
     show (FExpr_eq a1 a2) = "("++show a1++"=="++show a2++")"
 
+-}
 -- FIXME:
 -- This instance does NOT accomplish two important goals:
 --  1. It can't be used to compare two Expr's to see how similar they are.
@@ -359,6 +442,7 @@ instance Topology (Expr cxt p a) where
     type Neighborhood (Expr cxt p a) = ()
     (e1==e2) () = True
 
+{-
 --------------------
 
 class Topology c => Container c where
@@ -397,34 +481,6 @@ instance
 --     elem ea a = FExpr_elem ea a
 
 --------------------
-
-instance FAlgebra Semigroup where
-    data FExpr Semigroup p a where
-        FExpr_Semigroup
-            :: {-#UNPACK#-}!(FExpr Topology p a)
-            -> FExpr Semigroup p a
-        FExpr_plus
-            :: GetPhylum p a
-            -> GetPhylum p a
-            -> FExpr Semigroup p a
-    type FCxt Semigroup p a = Semigroup (GetPhylum p a)
---     runFExpr (FExpr_Semigroup e) = runFExpr e
-    runFExpr (FExpr_plus a1 a2) = a1+a2
-
-instance Show (GetPhylum p a) => Show (FExpr Semigroup p a) where
-    show (FExpr_plus a1 a2) = "("++show a1++"+"++show a2++")"
-
-instance PCat p cat => Functor cat (FExpr Semigroup p) where
-    fmap f (FExpr_plus a1 a2) = FExpr_plus (getPhylumArrow p f a1) (getPhylumArrow p f a2)
-        where
-            p = (Proxy::Proxy p)
-
-instance
-    ( GetPhylum p (Expr Semigroup p a) ~ Expr Semigroup p a
-    ) => Semigroup (Expr Semigroup p a)
-        where
-    e1+e2 = Free $ FExpr_plus e1 e2
-
 
 --------------------
 
@@ -632,124 +688,4 @@ instance (a,b) <: b where
 
 instance a <: Maybe a where
     embed = Just
-
---------------------------------------------------------------------------------
-
-{-
--- instance Topology (Free f) where
---     type Neighborhood (Free f) = ()
-
---------------------
-
-type Expr cxt b = Free (FExpr cxt) b
-
-test1 :: Expr Semigroup Int
-test1 = Free $ FExpr_plus (Pure 5) (Pure 6)
-
-instance Metric Int where
-    type Scalar Int = Int
-
-test2 :: FExpr Hilbert Int
-test2 = FExpr_dp (3 :: Int)  3
-
-instance Topology b => Topology (Free f b) where
-    type Neighborhood (Free f b) = Neighborhood b
-instance Metric b => Metric (Free f b) where
-    type Scalar (Free f b) = Free f (Scalar b)
-instance Poset (Free f b)
-instance Topology b => Semigroup (Free f b)
-instance Topology b => Hilbert (Free f b)
-
-test3 :: Expr Hilbert Int
-test3 = Free ( FExpr_dp (Pure 3) ( Pure (4::Int) :: Free (FExpr Hilbert) Int ))
-
---------------------
-
-class Functor (CxtHask cxt) (FExpr cxt) => FAlgebra (cxt :: Type -> Constraint) where
-    data FExpr cxt a
-    runFExpr  :: cxt a  => FExpr cxt a -> a
-    showFExpr :: Show a => FExpr cxt a -> String
-
---------------------
-
-class (Semigroup g) => Hilbert g where
-    (<>) :: g -> g -> Scalar g
-
-instance Hilbert Int where (<>) = (P.*)
-
-instance FAlgebra Hilbert where
-    data FExpr Hilbert a where
-        FExpr_SG :: !(FExpr Semigroup a) -> FExpr Hilbert a
-        FExpr_dp :: (Show a, Hilbert a) => a -> a -> FExpr Hilbert (Scalar a)
-        -- FIXME:
-        -- Does GADT encoding like this result in a lot of runtime overhead?
-
-    runFExpr (FExpr_SG e) = runFExpr e
-    runFExpr (FExpr_dp a1 a2) = a1<>a2
-
-    showFExpr (FExpr_SG e) = showFExpr e
-    showFExpr (FExpr_dp a1 a2) = show a1++"<>"++show a2
-
-instance Functor (CxtHask Hilbert) (FExpr Hilbert) where
-
--- FIXME:
--- This can't be a Functor in Hask;
--- but it can be a Functor in a constrained subcategory of Hask.
-instance P.Functor (FExpr Hilbert) where
-    fmap f (FExpr_SG e) = FExpr_SG $ P.fmap f e
---     fmap f (FExpr_dp a1 a2) = FExpr_dp (f a1) (f a2)
-
-instance Show b => Show (FExpr Hilbert b) where
-    show (FExpr_SG g) = show g
-    show (FExpr_dp a1 a2) = "FExpr_dp "++show a1++" "++show a2
-
---------------------
-
-instance FAlgebra Topology where
-    data FExpr Topology a where
-        FExpr_Eq :: (Topology a) => a -> a -> FExpr Topology (Logic a)
-
-    runFExpr (FExpr_Eq a1 a2) = a1==a2
-
---     showFExpr (FExpr_Eq a1 a2) = show a1++"=="++show a2
-
-instance Functor (CxtHask Topology) (FExpr Topology) where
-    fmap (CxtT (f::a->b)) (FExpr_Eq (a1::a) a2) = _ ((FExpr_Eq::b->b->FExpr Topology (Logic b)) (f a1)) --FExpr_Eq (f a1::b) (f a2::b)
-
-instance P.Functor (FExpr Topology) where
---     fmap f (FExpr_Eq a1 a2) = FExpr_Eq (f a1) (f a2)
-
-instance Show b => Show (FExpr Topology b) where
---     show (FExpr_Eq a1 a2) = "FExpr_Eq "++show a1++" "++show a2
-
-instance (FAlgebra cxt, Topology a) => Topology (FExpr cxt a) where
-    type Neighborhood (FExpr cxt a) = Neighborhood a
-
---------------------
-
-instance FAlgebra Semigroup where
-    data FExpr Semigroup a
-        = FExpr_Top {-#UNPACK#-}!(FExpr Topology a)
-        | FExpr_plus a a
-        deriving (Show)
-    runFExpr (FExpr_plus a1 a2) = a1+a2
-    runFExpr (FExpr_Top e) = runFExpr e
-
-    showFExpr (FExpr_Top e) = showFExpr e
-    showFExpr (FExpr_plus a1 a2) = show a1++"<>"++show a2
-
--- FIXME:
-instance Functor (CxtHask Semigroup) (FExpr Semigroup) where
---     fmap f (FExpr_Top e) = FExpr_Top $ fmap f e
-
-instance P.Functor (FExpr Semigroup) where
-    fmap f (FExpr_Top e) = FExpr_Top $ P.fmap f e
-    fmap f (FExpr_plus a1 a2) = FExpr_plus (f a1) (f a2)
-
--- instance Show b => Show (Expr Semigroup b) where
---     show (Pure b) = show b
---     show (Free f) = show f
-
--- instance Semigroup (Expr Semigroup Int) where
---     e1+e2 = Free $ Expr_f $ FExpr_plus e1 e2
     -}

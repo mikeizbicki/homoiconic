@@ -69,7 +69,8 @@ class Category cat => Functor cat (f::Type->Type) where
     -- the real type signature should be
     -- fmap :: cat a b -> cat (f a) (f b)
     -- but instances with this signature are *super* difficult to make
-    fmap :: cat a b -> f a -> f b
+--     fmap :: cat a b -> f a -> f b
+    fmap :: cat a b -> cat (f a) (f b)
 
 instance Functor Hask (Hask a) where
     fmap = P.fmap
@@ -97,11 +98,41 @@ instance Category cat => Category (CxtT cat cxt) where
     id = CxtT id
     (CxtT f1).(CxtT f2) = CxtT $ f1.f2
 
-instance (Functor cat (cat a), Category cat) => Functor (CxtT cat cxt) (CxtT cat cxt a) where
-    fmap (CxtT f) (CxtT g) = CxtT (fmap f g)
+-- instance
+--     ( Category cat
+--     , Concrete cat
+--     , Functor cat (cat a)
+--     , cat ~ Hask
+--     ) => Functor (CxtT cat cxt) (CxtT cat cxt a)
+--         where
+--     fmap (CxtT f) = CxtT $ \(CxtT g) -> CxtT (toHask (fmap f) g)
 
-proveCxtT :: (cxt a, cxt b) => cat a b -> CxtT cat cxt a b
-proveCxtT = CxtT
+-- instance
+--     ( Functor cat (cat a)
+--     , Concrete cat
+--     , Provable cat
+--     , cxt (CxtT cat cxt a b)
+--     ) => Functor (CxtT cat cxt) (CxtT cat cxt a)
+--         where
+--     fmap (CxtT f) = prove _go
+--         where
+--             go :: CxtT cat cxt a b ->
+-- --             go (CxtT g) = CxtT (toHask (fmap f) g)
+--
+-- class Provable cat where
+--     type ProveCxt cat a b :: Constraint
+--     prove :: ProveCxt cat a b => Hask a b -> cat a b
+--
+-- instance Provable cat => Provable (CxtT cat cxt) where
+--     type ProveCxt (CxtT cat cxt) a b = (cxt a, cxt b)
+-- --     prove f = CxtT f
+--
+-- instance Provable Hask where
+--     type ProveCxt Hask a b = ()
+--     prove = id
+--
+-- proveCxtT :: (cxt a, cxt b) => cat a b -> CxtT cat cxt a b
+-- proveCxtT = CxtT
 
 --------------------------------------------------------------------------------
 
