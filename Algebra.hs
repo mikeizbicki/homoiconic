@@ -263,6 +263,23 @@ instance (Hilbert a, Hilbert b, Scalar a~Scalar b) => Hilbert (a,b) where
 
 data Free f e = Free (f (Free f e)) | Pure e
 
+instance P.Functor f => P.Functor (Free f) where
+    fmap g (Pure e) = Pure $ g e
+    fmap g (Free f) = Free $ P.fmap (P.fmap g) f
+
+-- instance Functor cat f => Functor cat (Free f) where
+--     fmap g = _ $ Pure _ -- Pure $ toHask g e
+--     fmap g (Free f) = Free $ P.fmap (P.fmap g) f
+
+newtype Fix  f   = Fix  (f (Fix  f  ))
+newtype Fix' f e = Fix' (f (Fix' f e))
+
+instance P.Functor f => P.Functor (Fix' f) where
+    fmap g (Fix' f) = Fix' $ P.fmap (P.fmap g) f
+
+instance Functor Hask f => Functor Hask (Fix' f) where
+    fmap' g (Fix' f) = Fix' $ fmap' (fmap' g) f
+
 natFree' :: Functor cat f => (forall a. cat (f a) (g a)) -> Free f e -> Free g e
 natFree' = undefined
 

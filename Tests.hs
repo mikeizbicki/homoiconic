@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DefaultSignatures #-}
 
@@ -121,7 +122,7 @@ instance Splittable
 
 --------------------------------------------------------------------------------
 
-isLawful' :: forall cnst  (law::Symbol) (cxt::Type->Constraint)(a::Type).
+isLawful' :: forall cnst (law::Symbol) (cxt::Type->Constraint)(a::Type).
     ( cnst~(cxt a)
     , Approximate cxt law a
     , KnownSymbol law
