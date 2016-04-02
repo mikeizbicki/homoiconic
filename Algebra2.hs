@@ -63,23 +63,31 @@ type Expr' cxt a = Expr cxt ('AppAT 'Id 'Id) a
 eval :: forall cxt t a.
     ( AppAT t (Expr cxt t a) ~ Expr cxt t a
     , AppAT t (AppAT t a) ~ AppAT t a
-    , AppAT 'Scalar (AppAT t a) ~ AppAT t (AppAT 'Scalar a)
-    , AppAT t (AppAT t (Scalar a)) ~ AppAT t (Scalar a)
-    , AppAT t (Expr cxt t (Scalar a)) ~ Free t (FExpr cxt t) (Scalar a)
-    , cxt (UnAppAT t (AppAT t a))
-    , cxt (UnAppAT t (AppAT t (Scalar a)))
+--     , AppAT 'Scalar (AppAT t a) ~ AppAT t (AppAT 'Scalar a)
+--     , AppAT t (AppAT t (Scalar a)) ~ AppAT t (Scalar a)
+--     , AppAT t (Expr cxt t (Scalar a)) ~ Free t (FExpr cxt t) (Scalar a)
+--     , cxt (UnAppAT t (AppAT t a))
+--     , cxt (UnAppAT t (AppAT t (Scalar a)))
     , FAlgebra cxt
-    , Functor (ATCatT t Void2) (FExpr cxt t)
+--     , Functor (ATCatT t Void2) (FExpr cxt t)
+--     (
     ) => ATCatT ('AppAT 'Id t) (ATCatT ('AppAT 'Scalar t) Void2) (Expr cxt t a) (AppAT t a)
 eval = (ATCatT (ATCatT Void2 fs) f)
     where
-        fs :: AppAT 'Scalar (Expr cxt t a) -> AppAT 'Scalar (AppAT t a)
-        fs (Pure e) = e
-        fs (Free e) = runFExpr $ fmap' test e
+--         fs :: AppAT 'Scalar (Expr cxt t a) -> AppAT 'Scalar (AppAT t a)
+--         fs (Pure e) = e
+--         fs (Free e) = runFExpr $ fmap' test e
 
-        f :: AppAT t (Expr cxt t a) -> AppAT t (AppAT t a)
-        f (Pure e) = e
-        f (Free e) = runFExpr $ fmap' test e
+--         f :: AppAT t (Expr cxt t a) -> AppAT t (AppAT t a)
+--         f (Pure e) = e
+--         f (Free e) = runFExpr $ fmap' test e
+
+        fs = g (Proxy::Proxy 'Scalar) (Proxy::Proxy t)
+        f  = g (Proxy::Proxy 'Id    ) (Proxy::Proxy t)
+
+        g :: forall s s'. Proxy s -> Proxy s' -> AppAT s (Expr cxt s' a) -> AppAT s (AppAT s' a)
+--         g _ _ (Pure e) = e
+        g = undefined
 
 test :: forall cxt t a.
     ( AppAT t (Expr cxt t a) ~ Expr cxt t a
