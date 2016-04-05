@@ -24,51 +24,61 @@ import Unsafe.Coerce
 
 -------------------------------------------------------------------------------
 
-type IsScalar a = (Scalar a~a, Module a)
-type ValidScalar a = IsScalar (Scalar a)
-
 class Semigroup a where
     (+) :: a -> a -> a
 
-class (ValidScalar a, Semigroup a) => Module a where
+type ValidScalar a = (Scalar a~a, Module a)
+
+class (ValidScalar (Scalar a), Semigroup a) => Module a where
     (.*) :: a -> Scalar a -> a
 
--- class (ValidScalar a, Module a) => Hilbert a where
--- class (Module a) => Hilbert a where
-class Hilbert a where
+class Module a => Hilbert a where
     (<>) :: a -> a -> Scalar a
 
 --------------------------------------------------------------------------------
 
-instance Num (AppAT t a) => Num (E t a) where fromInteger = Ei . fromInteger
+instance (Show (AppAT t a), Num (AppAT t a)) => Num (E t a) where fromInteger = Ei . fromInteger
 
 -- type instance Scalar (E t a) = E (TagAT 'Scalar t) a
-type instance Scalar (E t a) = E (AppAT 'Scalar t) a
+-- type instance Scalar (E t a) = E (AppAT 'Scalar t) a
+type instance Scalar (E t a) = E (NestAT 'Scalar t) a
+-- type instance Scalar (E t a) = E t (Scalar a)
 
 --------------------
 
-unTag :: E (TagAT t1 t2) a -> E (AppAT t1 t2) a
+unTag :: E (TagAT t1 t2) a -> E (NestAT t1 t2) a
 unTag = unsafeCoerce
 
-reTag :: E (AppAT t1 t2) a -> E (TagAT t1 t2) a
+reTag :: E (NestAT t1 t2) a -> E (TagAT t1 t2) a
 reTag = unsafeCoerce
-
-type ScalarProp t =
-    ( AppAT 'Scalar (AppAT 'Scalar t) ~ AppAT 'Scalar t
-    )
 
 --------------------
 
 data E (t::AT) a where
-    Ei :: AppAT t a -> E t a
+    Ei :: Show      (AppAT t a) => AppAT t a                      -> E t a
+
     Ep :: Semigroup (AppAT t a) => E t a -> E t a                 -> E t a
     Em :: Module    (AppAT t a) => E t a -> E (TagAT 'Scalar t) a -> E t a
     Ed :: Hilbert   (AppAT t a) => E t a -> E t a                 -> E (TagAT 'Scalar t) a
 
-instance   Semigroup (AppAT t a)                         => Semigroup (E t a) where (+)  = Ep
-instance ( Module    (AppAT t a), Scalar (AppAT t a)~(AppAT (AppAT 'Scalar t) a),{-Module (AppAT (AppAT 'Scalar t) a),-} ScalarProp t ) => Module    (E t a)
+instance Semigroup (AppAT t a) => Semigroup (E t a) where (+)  e1 e2 = Ep e1 e2
+-- instance Module    (AppAT t a) => Module    (E t a) where (.*) e1 e2 = Em e1 (reTag e2)
+-- instance Hilbert   (AppAT t a) => Hilbert   (E t a) where (<>) e1 e2 = unTag (Ed e1 e2)
+
+instance
+    ( Module (AppAT t a)
+    , AppAT (NestAT 'Scalar t) a~Scalar (AppAT t a)
+    , Scalar (Scalar (AppAT t a))~Scalar (AppAT t a)
+    , NestAT 'Scalar (NestAT 'Scalar t) ~ NestAT 'Scalar t
+    ) => Module    (E t a)
     where (.*) e1 e2 = Em e1 (reTag e2)
-instance ( Hilbert   (AppAT t a) , ValidScalar (E t a) ) => Hilbert   (E t a)
+
+instance
+    ( Hilbert (AppAT t a)
+    , AppAT (NestAT 'Scalar t) a~Scalar (AppAT t a)
+    , Scalar (Scalar (AppAT t a))~Scalar (AppAT t a)
+    , NestAT 'Scalar (NestAT 'Scalar t) ~ NestAT 'Scalar t
+    ) => Hilbert   (E t a)
     where (<>) e1 e2 = unTag (Ed e1 e2)
 
 go :: E t a -> AppAT t a
@@ -77,57 +87,11 @@ go (Ep e1 e2) = go e1+go e2
 go (Em e1 e2) = go e1.*go e2
 go (Ed e1 e2) = go e1<>go e2
 
-instance
-    ( Show (AppAT t a)
-    , Show (Scalar (AppAT t a))
-    , ValidScalar (AppAT t a)
-    ) => Show (E t a)
-        where
+instance Show (E t a) where
     show (Ei e) = show e
     show (Ep e1 e2) = "("++show e1++"+"++show e2++")"
     show (Em e1 e2) = "("++show e1++"*"++show e2++")"
---     show (Ed e1 e2) = "("++show e1++"<>" -- ++show e2++")"
-
--- instance {-# OVERLAPPING #-}
---     ( Show (AppAT t a)
---     , Show (Scalar (AppAT t a))
---     , ValidScalar (AppAT t a)
---     ) => Show (E (TagAT 'Scalar t) a)
---         where
---     show (Ei e) = show e
---     show (Ep e1 e2) = "("++show e1++"+"++show e2++")"
---     show (Em e1 e2) = "("++show e1++"*"++show e2++")"
--- --     show (Ed e1 e2) = "("++show e1++"<>"++show e2++")"
-
--- instance
---     ( Show a
---     , Show (Scalar a)
---     ) => Show (E 'Id a)
---         where
---     show (Ei e) = show e
---     show (Ep e1 e2) = "("++show e1++"+"++show e2++")"
---     show (Em e1 e2) = "("++show e1++"*"++show e2++")"
---
--- instance
---     ( Show a
---     , Show (Scalar a)
---     ) => Show (E ('TagAT 'Scalar 'Id) a)
---         where
---     show (Ei e) = show e
---     show (Ep e1 e2) = "("++show e1++"+"++show e2++")"
-
--- class Eval t where
---     eval :: E t a -> AppAT t a
---
--- instance
--- --     ( Eval (AppAT 'Scalar t)
---     () => Eval t
---         where
---     eval :: E t a -> AppAT t a
---     eval (Ei a) = a
---     eval (Ep e1 e2) = eval e1+eval e2
--- --     eval (Em e1 e2) = eval e1.*eval e2
--- --     eval (Ed e1 e2) = eval e1<>eval e2
+    show (Ed e1 e2) = "("++show e1++"<>"++show e2++")"
 
 --------------------------------------------------------------------------------
 
@@ -136,12 +100,15 @@ data AT
     | Scalar
     | TagAT AT AT
 
-type family AppAT (t::AT) (a::k) :: k
+type family AppAT (t::AT) (a::Type) :: Type
 type instance AppAT 'Id a = a
 type instance AppAT 'Scalar a = Scalar a
 type instance AppAT (TagAT t t') a = AppAT t (AppAT t' a)
-type instance AppAT 'Scalar 'Id = 'Scalar
-type instance AppAT 'Scalar 'Scalar = 'Scalar
+
+type family NestAT (t::AT) (a::AT) :: AT where
+    NestAT t       'Id     = t
+--     NestAT t1      t2      = TagAT t1 t2
+    NestAT 'Scalar 'Scalar = 'Scalar
 
 --------------------------------------------------------------------------------
 
@@ -185,15 +152,15 @@ data Expr (t::AT) a where
 
 mkExpr = Expr_Id
 
-type instance Scalar (Expr t a) = Expr (AppAT 'Scalar t) a
--- type instance Scalar (Expr t a) = Expr t (Scalar a)
+-- type instance Scalar (Expr t a) = Expr (AppAT 'Scalar t) a
+-- -- type instance Scalar (Expr t a) = Expr t (Scalar a)
 
 --------------------
 
 instance Semigroup (AppAT t a) => Semigroup (Expr t a) where
     (+) = Expr_plus
 
-instance (ValidScalar (Expr t a), Module (AppAT t a)) => Module (Expr t a) where
+-- instance (ValidScalar (Expr t a), Module (AppAT t a)) => Module (Expr t a) where
 --     (.*) = Expr_mul
 
 -- instance (ValidScalar (AppAT t a), Hilbert (AppAT t a)) => Hilbert (Expr t a) where
