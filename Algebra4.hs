@@ -31,7 +31,8 @@ class Semigroup a where
 type ValidScalar a = (Scalar a~a, Module a)
 
 -- class (ValidScalar (Scalar a), Semigroup a) => Module a where
-class Semigroup a => Module a where
+class (Module (Scalar a), Semigroup a) => Module a where
+-- class Semigroup a => Module a where
     (.*) :: a -> Scalar a -> a
 
 class Module a => Hilbert a where
@@ -265,7 +266,17 @@ instance FAlgebra Hilbert where
 
 --------------------------------------------------------------------------------
 
-instance (Show (AppAT t a), Num (AppAT t a)) => Num (B t a) where fromInteger = unTag . Bi . fromInteger
+data Box t a where
+    Box :: AppAT t a -> Box t a
+
+data A a where
+    Ai :: a -> A a
+
+    Ad :: Box 'Id (A a) -> Box 'Id (A a) -> A (Box 'Scalar (A a))
+
+--------------------------------------------------------------------------------
+
+instance Num (AppAT t a) => Num (B t a) where fromInteger = unTag . Bi . fromInteger
 
 type instance Scalar (B t a) = B (NestAT 'Scalar t) a
 
@@ -406,6 +417,7 @@ instance Show (E t a) where
 data AT
     = Id
     | Scalar
+    | Logic
     | TagAT AT AT
 
 type family AppAT (t::AT) (a::Type) :: Type
@@ -414,11 +426,11 @@ type instance AppAT 'Scalar a = Scalar a
 type instance AppAT (TagAT t t') a = AppAT t (AppAT t' a)
 
 type family NestAT (t::AT) (a::AT) :: AT
-type instance NestAT t       'Id     = t
 type instance NestAT 'Id     t       = t
-type instance NestAT 'Scalar 'Scalar = 'Scalar
-type instance NestAT 'Scalar (TagAT 'Scalar t) = (TagAT 'Scalar t)
+type instance NestAT t       'Id     = t
 type instance NestAT t1      (TagAT 'Id     t) = (TagAT t1 t)
+-- type instance NestAT 'Scalar 'Scalar = 'Scalar
+-- type instance NestAT 'Scalar (TagAT 'Scalar t) = (TagAT 'Scalar t)
 
 --------------------------------------------------------------------------------
 
