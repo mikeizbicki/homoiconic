@@ -56,13 +56,13 @@ instance (Hilbert a, Hilbert b, Semigroup (Scalar b), Scalar a~Scalar b) => Hilb
 
 type Space = Hilbert
 
-x :: Expr Space (Tag 'Id 'Id) (Int,Int)
+x :: Expr Space 'Id (Int,Int)
 x = Pure (2,2)
 
-y :: Expr Space (Tag 'Id 'Id) (Int,Int)
+y :: Expr Space 'Id (Int,Int)
 y = Pure (1,3)
 
-z :: Scalar (Expr Space (Tag 'Id 'Id) (Int,Int))
+z :: Scalar (Expr Space 'Id (Int,Int))
 z = Pure 1
 
 --------------------------------------------------------------------------------
@@ -211,9 +211,9 @@ instance FAlgebra Hilbert where
            -> a
            -> a
            -> Sig Hilbert (MaybeTag 'Scalar t) a
---            -> Sig Hilbert (Tag 'Scalar t) a
 
-    alg (SH h) = alg h
+--     alg (SH h) = alg h
+--     alg (Sd _ e1 e2) = e1<>e2
 
 instance
     ( Show a
@@ -264,7 +264,7 @@ class Taggable (s::AT) (t::AT) where
 instance {-#OVERLAPS#-} Taggable 'Scalar (Tag 'Scalar t) where
     freeTag _ _ = Free
 
-instance {-#OVERLAPS#-} MaybeTag r (Tag s t) ~ Tag r (Tag s t) => Taggable r (Tag s t) where
+instance {-#OVERLAPS#-} MaybeTag s t ~ Tag s t => Taggable s t where
     freeTag p1 p2 = FreeTag p1 p2
 
 --------------------------------------------------------------------------------
