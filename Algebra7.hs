@@ -68,10 +68,11 @@ z = Pure 1
 --------------------------------------------------------------------------------
 
 data Free (f::AT->Type->Type) (t::AT) (a::Type) where
---     FreeTag  :: Proxy s ->      f (MaybeTag s t  ) (Free f t a)  -> Free f (MaybeTag s t  ) a
     FreeTag  :: Proxy s -> Proxy t -> f (     Tag s t  ) (Free f t a)  -> Free f (     Tag s t  ) a
     Free     ::                       f             t    (Free f t a)  -> Free f             t    a
     Pure     :: App t a -> Free f t a
+
+--------------------
 
 instance
     ( Show      (App t a)
@@ -83,38 +84,79 @@ instance
     show (Free        f) = show f
     show (Pure        a) = show a
 
--- instance {-#OVERLAPS#-}
---     ( Show      (App (Tag 'Scalar t) a)
--- --     , Show (f (Tag 'Scalar t) (Free f t a))
---     ) => Show (Free f (Tag 'Scalar t) a)
---         where
--- --     show (FreeTag _ f) = show f
---     show (Pure      a) = show a
-
+--------------------
 
 type family ShowUntag (f::Type) :: Constraint where
---     ShowUntag (f (Tag 'Id t) (Free f (Tag 'Id t) a))  = Show (f (Tag 'Id t) (Free f (Tag 'Id t) a))
     ShowUntag (f (Tag s   t) (Free f (Tag s   t) a))  = Show (f (Tag s   t) (Free f          t  a))
     ShowUntag _ = ()
+
+--------------------
+
+class Taggable (s::AT) (t::AT) where
+    freeTag  :: Proxy s -> Proxy t -> f (MaybeTag s t  ) (Free f t a)  -> Free f (MaybeTag s t  ) a
+
+instance {-#OVERLAPS#-} Taggable 'Scalar (Tag 'Scalar t) where
+    freeTag _ _ = Free
+
+instance {-#OVERLAPS#-} MaybeTag s t ~ Tag s t => Taggable s t where
+    freeTag p1 p2 = FreeTag p1 p2
+
+--------------------
 
 instance Functor (f t) => Functor (Free f t) where
     fmap g (Free f) = Free (fmap (fmap g) f)
 --     fmap g (Pure a) = Pure $ g a
 
+
 ----------------------------------------
 
 type Expr alg t a = Free (Sig alg) t a
 
--- eval :: (Functor (Sig alg t), FAlgebra alg, alg (App t a)) => Expr alg t a -> App t a
--- eval (FreeTag f) = alg $ fmap eval f
--- eval (Free    f) = alg $ fmap eval f
--- eval (Pure    a) = a
+eval :: forall alg t a.
+    ( Functor (Sig alg t)
+--     , FunctorUntag (Sig alg t)
+    , FAlgebra alg
+    , alg (App t a)
+--     , alg a
+    ) => Expr alg t a
+      -> App t a
+-- eval (FreeTag _ _ f) = algFreeTag (Proxy::Proxy a) $ fmap eval f
+eval (Free        f) = algFree    (Proxy::Proxy a) $ fmap eval f
+eval (Pure        a) = a
+
+class Eval alg (t::AT) a where
+    go :: Expr alg t a -> App t a
+
+instance
+    ( Functor (Sig alg t)
+    , FAlgebra alg
+    , alg (App t a)
+    ) => Eval alg t a
+        where
+--     go (FreeTag _ _ f) = algFreeTag (Proxy::Proxy a) $ fmap go f
+    go (Free        f) = algFree    (Proxy::Proxy a) $ fmap go f
+    go (Pure        a) = a
+
+instance {-#OVERLAPS#-}
+    ( Functor (Sig alg (Tag s t))
+    , Functor (Sig alg        t )
+    , alg (App (Tag s t) a)
+    , alg (App        t  a)
+    , FAlgebra alg
+    ) => Eval alg (Tag s t) a
+        where
+    go (FreeTag _ _ f) = algFreeTag (Proxy::Proxy a) $ fmap go f
+    go (Free        f) = algFree    (Proxy::Proxy a) $ fmap go f
+    go (Pure        a) = a
 
 --------------------------------------------------------------------------------
 
 class FAlgebra (alg::Type->Constraint) where
     data Sig alg (t::AT) a
     alg :: alg a => Sig alg t a -> a
+
+    algFreeTag :: alg (App t a) => proxy a -> Sig alg (Tag s t) (App t a) -> App (Tag s t) a
+    algFree    :: alg (App t a) => proxy a -> Sig alg        t  (App t a) -> App        t  a
 
 ----------------------------------------
 
@@ -123,8 +165,13 @@ instance FAlgebra Topology where
         Se :: a -> a -> Sig Topology (MaybeTag 'Logic t) a
 --     alg (Se a1 a2) = a1==a2
 
+    algFreeTag _ (Se a1 a2) = a1==a2
+
 instance Show a => Show (Sig Topology t a) where
     show (Se a1 a2) = "("++show a1++"=="++show a2++")"
+
+instance Functor (Sig Topology t) where
+    fmap f (Se a1 a2) = Se (f a1) (f a2)
 
 instance Topology (Expr Topology t a) where
     type Logic (Expr Topology t a) = Expr Topology (MaybeTag 'Logic t) a
@@ -139,12 +186,18 @@ instance FAlgebra Semigroup where
     alg (SS s) = alg s
     alg (Sp a1 a2) = a1+a2
 
+    algFreeTag p (SS s) = algFreeTag p s
+
+    algFree p (SS s) = algFree p s
+    algFree p (Sp a1 a2) = a1+a2
+
 instance Show a => Show (Sig Semigroup t a) where
     show (SS s) = show s
     show (Sp a1 a2) = "("++show a1++"+"++show a2++")"
 
--- instance Functor (Sig Semigroup t) where
---     fmap f (Sp a1 a2) = Sp (f a1) (f a2)
+instance Functor (Sig Semigroup t) where
+    fmap f (SS s)     = SS $ fmap f s
+    fmap f (Sp a1 a2) = Sp (f a1) (f a2)
 
 instance Topology (Expr Semigroup t a) where
     type Logic (Expr Semigroup t a) = Expr Semigroup (MaybeTag 'Logic t) a
@@ -161,6 +214,13 @@ instance FAlgebra Module where
         Sm :: Scalar a -> a -> Sig Module t a
     alg (SM m) = alg m
     alg (Sm s a) = s.*a
+
+    algFreeTag p (SM m)   = algFreeTag p m
+--     algFreeTag p (Sm s a) = s.*a
+
+    algFree p (SM m)   = algFree p m
+    algFree p (Sm s a) = s.*a
+
 
 instance
     ( Show a
@@ -182,6 +242,9 @@ instance {-#OVERLAPS#-}
     ) => Show (Sig Module (Tag 'Logic t) a)
         where
     show (SM m) = show m
+
+instance Functor (Sig Module t) where
+    fmap f (SM s) = SM $ fmap f s
 
 instance Topology (Expr Module t a) where
     type Logic (Expr Module t a) = Expr Module (MaybeTag 'Logic t) a
@@ -215,6 +278,12 @@ instance FAlgebra Hilbert where
 --     alg (SH h) = alg h
 --     alg (Sd _ e1 e2) = e1<>e2
 
+    algFreeTag p (SH m)       = algFreeTag p m
+--     algFreeTag p (Sd _ a1 a2) = a1<>a2
+
+    algFree p (SH m)       = algFree p m
+--     algFree p (Sd _ a1 a2) = a1<>a2
+
 instance
     ( Show a
     , Show (Scalar a)
@@ -236,8 +305,9 @@ instance {-#OVERLAPS#-}
         where
     show (SH h) = show h
 
--- instance Functor (Sig Hilbert t) where
---     fmap f (SH h) = SH $ fmap f h
+instance Functor (Sig Hilbert t) where
+    fmap f (SH h) = SH $ fmap f h
+    fmap f (Sd p a1 a2) = Sd p (f a1) (f a2)
 
 instance Topology (Expr Hilbert t a) where
     type Logic (Expr Hilbert t a) = Expr Hilbert (MaybeTag 'Logic t) a
@@ -255,17 +325,6 @@ instance Taggable 'Scalar t => Hilbert (Expr Hilbert t a) where
         (Proxy::Proxy 'Scalar)
         (Proxy::Proxy t)
         $ Sd (Proxy::Proxy t) e1 e2
-
---------------------
-
-class Taggable (s::AT) (t::AT) where
-    freeTag  :: Proxy s -> Proxy t -> f (MaybeTag s t  ) (Free f t a)  -> Free f (MaybeTag s t  ) a
-
-instance {-#OVERLAPS#-} Taggable 'Scalar (Tag 'Scalar t) where
-    freeTag _ _ = Free
-
-instance {-#OVERLAPS#-} MaybeTag s t ~ Tag s t => Taggable s t where
-    freeTag p1 p2 = FreeTag p1 p2
 
 --------------------------------------------------------------------------------
 
