@@ -72,6 +72,9 @@ class Category cat => Functor cat (f::Type->Type) where
     fmap  :: cat a b -> cat (f a) (f b)
     fmap' :: cat a b -> f a -> f b
 
+class (Category cat1, Category cat2) => Func cat1 cat2 (f::Type -> Type) where
+    func :: cat1 a b -> cat2 (f a) (f b)
+
 ----------------------------------------
 
 class Category cat => Concrete cat where
