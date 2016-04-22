@@ -13,6 +13,7 @@ import LocalPrelude hiding ((.))
 import Lattice
 -- import Tests
 import Topology1
+import Data.Kind
 
 -- class Lawful (cxt :: * -> Constraint) (law::Symbol) where
 class Lawful2 (cxt :: (k -> k -> Type) -> Constraint) (law::Symbol) where

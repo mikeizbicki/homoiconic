@@ -98,7 +98,7 @@ instance
     , ShowUntag (f t (Free f t a))
     ) => Show (Free f t a)
         where
-    show (FreeTag _ _ f) = show f
+    show (FreeTag _ _ f) = "["++show f++"]"
     show (Free        f) = show f
     show (Pure        a) = show a
 
@@ -145,35 +145,24 @@ instance
 instance
     ( FAlgebra alg
     , Functor (Sig alg (Tag s t))
---     , alg (App (Tag s t) a)
---     , alg (App (      t) a)
+    , alg (App (Tag s t) a)
+    , alg (App (      t) a)
     , Eval alg t a
-    , alg a
+--     , alg a
     ) => Eval alg (Tag s t) a
         where
---     go (FreeTag _ _ f) = _algFreeTag (Proxy::Proxy a) $ fmap go f
---     go (Free        f) = algFree    (Proxy::Proxy a) $ fmap go f
-    go (FreeTag _ _ f) = algTag     (Proxy::Proxy a) $ fmap go f
-    go (Free        f) = alg        (Proxy::Proxy a) $ fmap go f
+    go (FreeTag _ _ f) = algFreeTag (Proxy::Proxy a) $ fmap go f
+    go (Free        f) = algFree    (Proxy::Proxy a) $ fmap go f
+--     go (FreeTag _ _ f) = algTag     (Proxy::Proxy a) $ fmap go f
+--     go (Free        f) = alg        (Proxy::Proxy a) $ fmap go f
     go (Pure        a) = a
 
 --------------------
 
--- class Reduce alg t a where
---     reduce :: Expr alg t a -> Expr alg 'Id (App t a)
---
--- instance Reduce alg 'Id a where
---     reduce (Free f) = Free f
---     reduce (Pure a) = Pure a
---
--- instance
---     ( Functor (Sig alg (Tag s t))
---     ) => Reduce alg (Tag s t) a where
---     reduce (Free        f) = Free $ unTag $ fmap reduce f
---     reduce (Pure        a) = Pure a
---
--- unTag :: Sig alg t a -> Sig alg 'Id a
--- unTag = unsafeCoerce
+instance Semigroup Bool
+instance Module Bool where
+    type Scalar Bool = Bool
+instance Hilbert Bool
 
 --------------------------------------------------------------------------------
 
@@ -189,7 +178,7 @@ class FAlgebra (alg::Type->Constraint) where
     algTag :: alg a => proxy a -> Sig alg (Tag s t) (App t a) -> App (Tag s t) a
     alg    :: alg a => proxy a -> Sig alg        t  (App t a) -> App        t  a
 
-    alg'  :: alg a => proxy a -> Sig alg 'Id a -> a
+    alg'  :: alg a => proxy a -> Sig alg t a -> App t a
     alg'' :: alg a => proxy a -> Sig alg (Tag s t) a -> App (    s  ) a
 
 ----------------------------------------
@@ -219,25 +208,34 @@ instance Poset (Expr Poset 'Id a) where
 instance FAlgebra Topology where
     data Sig Topology t a where
         ST :: {-#UNPACK#-}!(Sig Poset (Tag 'Logic t) a) -> Sig Topology (Tag 'Logic t) a
+--         SU :: {-#UNPACK#-}!(Sig Poset 'Id (Logic a)) -> Sig Topology (Tag 'Logic 'Id) a
+        SU :: {-#UNPACK#-}!(Sig Poset 'Id (      a)) -> Sig Topology (Tag 'Logic 'Id) a
         Se :: a -> a -> Sig Topology (MaybeTag 'Logic t) a
+        Sf :: a -> a -> Sig Topology (Tag 'Logic 'Id) a
 
 --     algFreeTag p (ST s)     = algFreeTag p s
+--     algFreeTag p (ST s)     = algFree    p s
     algFreeTag p (Se a1 a2) = a1==a2
---     algFree    p (ST s)     = algFree p s
+--     algFree    p (SU s)     = algFree p s
+
+--     alg' p (SU s) = _alg' Proxy s
+    alg' p (Sf e1 e2) = e1==e2
 
 instance Show a => Show (Sig Topology t a) where
     show (ST a)     = show a
     show (Se a1 a2) = "("++show a1++"=="++show a2++")"
 
 instance Functor (Sig Topology t) where
+    fmap f (ST t) = ST $ fmap f t
     fmap f (Se a1 a2) = Se (f a1) (f a2)
 
 instance Poset (Expr Topology (Tag 'Logic t) a) where
---     inf e1 e2 = Free $ ST $ Pi e1 e2
+    inf e1 e2 = Free $ ST $ Pi e1 e2
 --     inf e1 e2 = Free $ SU $ Pi e1 e2
 
 instance Poset (Expr Topology (Tag 'Logic 'Id) a) where
-    inf e1 e2 = Free $ ST $ Pi e1 e2
+--     inf e1 e2 = Free $ ST $ Pi e1 e2
+    inf e1 e2 = Free $ SU $ Pj (e1) (e2)
 
 instance Topology (Expr Topology t a) where
     type Logic (Expr Topology t a) = Expr Topology (MaybeTag 'Logic t) a
