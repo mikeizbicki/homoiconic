@@ -11,7 +11,7 @@ import LocalPrelude
 import Prelude ((.))
 import qualified Prelude as P
 
--- import Unsafe.Coerce
+import Unsafe.Coerce
 
 import Data.Kind
 import GHC.TypeLits
@@ -87,8 +87,10 @@ class Topology a => Semigroup a where
 
 type family Scalar a
 -- class (Scalar (Scalar a)~Scalar a, Semigroup a) => Module a where
+-- class (Scalar (Scalar a)~Scalar a, Semigroup (Scalar a), Semigroup a) => Module a where
+class (Scalar (Scalar a)~Scalar a, Module (Scalar a), Semigroup a) => Module a where
 -- class Semigroup a => Module a where
-class (Semigroup a, Semigroup (Scalar a)) => Module a where
+-- class (Semigroup a, Semigroup (Scalar a)) => Module a where
 -- class (Semigroup a, Module (Scalar a)) => Module a where
     (.*) :: Scalar a -> a -> a
 
@@ -130,7 +132,7 @@ instance (Hilbert a, Hilbert b, Semigroup (Scalar b), Scalar a~Scalar b) => Hilb
 
 --------------------------------------------------------------------------------
 
-type Space = Module
+type Space = Hilbert
 
 x :: Expr Space '[] Int
 x = Pure 5
@@ -146,10 +148,8 @@ z = Pure 3
 type Expr alg = Free (Sig alg)
 
 data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
-    FreeTag  :: f (     s ':  t  ) (Free f        t  a)  -> Free f (     s ':  t  ) a
---     FreeGat  :: f (           t  ) (Free f (Tag s t) a)  -> Free f (     Tag s t  ) a
---     FreeGGG  :: f (           t  ) b                     -> Free f (     Tag s t  ) a
-    Free     :: f             t    (Free f        t  a)  -> Free f             t    a
+    FreeTag  :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
+    Free     :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
     Pure     :: App t a -> Free f t a
 
 --------------------
@@ -216,7 +216,10 @@ type family ShowUntag (f::Type) :: Constraint where
 --     go (Free        f) = alg    (Proxy :: Proxy a) $ fmap go f
 --     go (Pure        a) = a
 
-eval :: forall alg t a. (FAlgebra alg, alg a) => Expr alg t a -> App t a
+eval :: forall alg t a.
+    ( FAlgebra alg
+    , alg a
+    ) => Expr alg t a -> App t a
 eval (Pure    a) = a
 eval (Free    s) = alg    (Proxy::Proxy a) $ mape eval s
 eval (FreeTag s) = algTag (Proxy::Proxy a) $ mape eval s
@@ -224,7 +227,15 @@ eval (FreeTag s) = algTag (Proxy::Proxy a) $ mape eval s
 ----------------------------------------
 
 type instance Logic  (Expr alg t a) = Expr alg ('Logic  ': t) a
-type instance Scalar (Expr alg t a) = Expr alg ('Scalar ': t) a
+-- type instance Scalar (Expr alg t a) = Expr alg ('Scalar ': t) a
+type instance Scalar (Expr alg t a) = Expr alg (AppScalar t) a
+
+type family AppScalar (xs::[AT]) :: [AT] where
+    AppScalar ('Scalar ': xs) = 'Scalar ': xs
+    AppScalar xs              = 'Scalar ': xs
+
+type TypeConstraints (t::[AT]) (a::Type)
+    = (App (AppScalar t) a ~ Scalar (App t a))
 
 class FAlgebra (alg::Type->Constraint) where
     data Sig alg (t::[AT]) a
@@ -232,7 +243,8 @@ class FAlgebra (alg::Type->Constraint) where
     algTag :: alg a => proxy a -> Sig alg (s ':  t) (App t a) -> App (s ':  t) a
     alg    :: alg a => proxy a -> Sig alg        t  (App t a) -> App        t  a
 
-    mape :: (forall t'. Expr alg' t' a -> App t' a)
+    mape :: (TypeConstraints t' a)
+         => (forall s. Expr alg' s a -> App s a)
          -> Sig alg t (Expr alg' t' a)
          -> Sig alg t (App t' a)
 
@@ -318,7 +330,7 @@ instance FAlgebra Module where
     data Sig Module t a where
         SM  :: {-#UNPACK#-}!(Sig Semigroup t          a) -> Sig Module t                   a
         SN1 :: {-#UNPACK#-}!(Sig Semigroup '[ 'Logic] a) -> Sig Module '[ 'Logic,'Scalar ] a
-        SN2 :: {-#UNPACK#-}!(Sig Semigroup '[       ] a) -> Sig Module '[        'Scalar ] a
+        SN2 :: {-#UNPACK#-}!(Sig Module    '[       ] a) -> Sig Module '[        'Scalar ] a
         Sp :: Scalar a -> a -> Sig Module '[] a
 
     alg    p            (SM s)     = alg p                         s
@@ -346,10 +358,8 @@ instance
     show (SN2 s) = show s
     show (Sp a1 a2) = show a1++".*"++show a2
 
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, 'Scalar ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , 'Scalar ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, 'Logic  ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , 'Logic  ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, t ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , t ] a) where show _ = "<<overflow>>"
 
 instance Poset (Expr Module '[ 'Logic ] a) where
     inf e1 e2 = FreeTag $ SM $ SS $ ST $ Si e1 e2
@@ -360,20 +370,73 @@ instance Topology (Expr Module '[] a) where
 instance Semigroup (Expr Module '[] a) where
     (+) e1 e2 = Free $ SM $ Sa e1 e2
 
-instance Module (Expr Module '[] a) where
+instance Scalar (Scalar a) ~ Scalar a => Module (Expr Module '[] a) where
     (.*) e1 e2 = Free $ Sp e1 e2
 
-instance Poset (Expr Module '[ 'Logic, 'Scalar ] a) where
+instance Scalar (Scalar a) ~ Scalar a => Poset (Expr Module '[ 'Logic, 'Scalar ] a) where
     inf e1 e2 = FreeTag $ SN1 $ SS $ ST $ Si e1 e2
 
-instance Topology (Expr Module '[ 'Scalar ] a) where
+instance Scalar (Scalar a) ~ Scalar a => Topology (Expr Module '[ 'Scalar ] a) where
     (==) e1 e2 = FreeTag $ SN1 $ SS $ Se e1 e2
 
-instance Semigroup (Expr Module '[ 'Scalar ] a) where
-    (+) e1 e2 = Free    $ SN2 $ Sa e1 e2
+instance Scalar (Scalar a) ~ Scalar a => Semigroup (Expr Module '[ 'Scalar ] a) where
+    (+) e1 e2 = Free    $ SN2 $ SM $ Sa e1 e2
 
--- instance Module (Expr Module '[ 'Scalar ] a) where
---     (.*) e1 e2 = Free $ SN $ Sp e1 e2
+instance Scalar (Scalar a) ~ Scalar a => Module (Expr Module '[ 'Scalar ] a) where
+    (.*) e1 e2 = Free $ SN2 $ Sp e1 e2
+
+----------------------------------------
+
+instance FAlgebra Hilbert where
+    data Sig Hilbert t a where
+        SH :: {-#UNPACK#-}!(Sig Module t a) -> Sig Hilbert t a
+        Sd :: a -> a -> Sig Hilbert '[ 'Scalar ] a
+
+    alg    p (SH s) = alg    p s
+    algTag p (SH s) = algTag p s
+    algTag p (Sd a1 a2) = a1<>a2
+
+    mape f (SH s) = SH $ mape f s
+    mape f (Sd a1 a2) = Sd (f a1) (f a2)
+
+instance
+    ( Show a
+    , Show (Logic a)
+    , Show (Scalar a)
+    ) => Show (Sig Hilbert t a)
+        where
+    show (SH s) = show s
+    show (Sd a1 a2) = show a1++"<>"++show a2
+
+instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Scalar, t ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Logic , t ] a) where show _ = "<<overflow>>"
+
+instance Poset (Expr Hilbert '[ 'Logic ] a) where
+    inf e1 e2 = FreeTag $ SH $ SM $ SS $ ST $ Si e1 e2
+
+instance Topology (Expr Hilbert '[] a) where
+    (==) e1 e2 = FreeTag $ SH $ SM $ SS $ Se e1 e2
+
+instance Semigroup (Expr Hilbert '[] a) where
+    (+) e1 e2 = Free $ SH $ SM $ Sa e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Module (Expr Hilbert '[] a) where
+    (.*) e1 e2 = Free $ SH $ Sp e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Hilbert (Expr Hilbert '[] a) where
+    (<>) e1 e2 = FreeTag $ Sd e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Poset (Expr Hilbert '[ 'Logic, 'Scalar ] a) where
+    inf e1 e2 = FreeTag $ SH $ SN1 $ SS $ ST $ Si e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Topology (Expr Hilbert '[ 'Scalar ] a) where
+    (==) e1 e2 = FreeTag $ SH $ SN1 $ SS $ Se e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Semigroup (Expr Hilbert '[ 'Scalar ] a) where
+    (+) e1 e2 = Free    $ SH $ SN2 $ SM $ Sa e1 e2
+
+instance Scalar (Scalar a) ~ Scalar a => Module (Expr Hilbert '[ 'Scalar ] a) where
+    (.*) e1 e2 = Free    $ SH $ SN2 $ SM $ Sa e1 e2
 
 --------------------------------------------------------------------------------
 
