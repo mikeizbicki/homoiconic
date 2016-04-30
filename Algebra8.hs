@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Algebra8
     where
@@ -104,6 +105,9 @@ class Module a => Hilbert a where
 
 ----------------------------------------
 
+type instance Logic () = ()
+type instance Scalar () = ()
+
 type instance Logic Bool = Bool
 type instance Scalar Bool = ()
 instance Poset Bool where
@@ -151,7 +155,7 @@ x = Pure (1,5)
 y :: Expr Space (Int,Int)
 y = Pure (1,4)
 
-z :: Scalar (ExprType (Int,Int) )
+z :: Scalar (Expr Space (Int,Int) )
 z = Pure 3
 
 --------------------------------------------------------------------------------
@@ -207,6 +211,10 @@ type family ShowUntag (f::Type) :: Constraint where
 
 ----------------------------------------
 
+-- NOTE:
+-- There's no need for this class based eval function anymore.
+-- I believe (?) this was required when the types families were associated to a class.
+--
 -- class Eval alg (t::AT) a where
 --     go :: Free (Sig alg) t a -> App t a
 --
@@ -292,6 +300,43 @@ data Law (alg::Type->Constraint) = forall t. Law
 instance Show (Free (Sig alg) '[] Var) => Show (Law alg) where
     show (Law lawName lhs rhs) = show lhs ++ " = " ++ show rhs
 
+--------------------
+
+reassoc :: Free (Sig Hilbert) '[ 'Logic] a -> Logic (Expr Hilbert a)
+reassoc (Expr_inf (Expr_inf e1 e2) e3) = Expr_inf e1 $ reassoc (Expr_inf e2 e3)
+reassoc e = e
+
+-- FIXME:
+-- The pattern needs to be generic over all expressions supporting `inf`.
+pattern Expr_inf e1 e2 = FreeTag ( SH ( SM ( SS ( ST (Si e1 e2))))) :: Logic (Expr Hilbert a)
+
+func :: Topology a => a -> a -> Logic a
+func x y = (x==x)&&(x==y)&&(y==y)
+
+liberate1 :: (Expr alg x1                               -> y) -> x1             -> y
+liberate1 f x1          = f (Pure x1)
+
+liberate2 :: (Expr alg x1 -> Expr alg x2                -> y) -> x1 -> x2       -> y
+liberate2 f x1 x2       = f (Pure x1) (Pure x2)
+
+liberate3 :: (Expr alg x1 -> Expr alg x2 -> Expr alg x3 -> y) -> x1 -> x2 -> x3 -> y
+liberate3 f x1 x2 x3    = f (Pure x1) (Pure x2) (Pure x3)
+
+frock2 ::
+    ( alg y'
+    , FAlgebra alg
+    ) => (y -> Free (Sig alg) t y')
+      -> (Expr alg x1 -> Expr alg x2 ->       y )
+      -> (         x1 ->          x2 -> App t y')
+frock2 f g = \x y -> eval $ f $ liberate2 g x y
+
+-- FIXME:
+-- The names for the functions above are really weird and should be improved.
+
+-- FIXME:
+-- How does frocking affect the performance of the function?
+-- Would it have the same core as the hand written code?
+
 --------------------------------------------------------------------------------
 
 -- class Functor f where
@@ -343,7 +388,7 @@ class Subclass (cxt1::Type->Constraint) (cxt2::Type->Constraint) (t::[AT]) where
            -> Proxy cxt2
            -> Proxy t
            -> (( alg a
-               , Show (Sig alg t a)
+--                , Show (Sig alg t a)
                ) => Proxy alg' -> Proxy alg -> Proxy t -> Sig alg t a -> Sig Universal t a)
            -> (( --alg (App t a)
                ) => Proxy alg' -> Proxy alg -> Proxy t -> Sig alg t a -> Sig Universal t a)
@@ -357,7 +402,6 @@ instance FAlgebra Universal where
     data Sig Universal t a where
         U :: forall alg' alg t a.
             ( FAlgebra alg
-            , Show (Sig alg t a)
             , alg a
             , Subclass alg' alg t
             ) => Proxy alg'
@@ -372,8 +416,11 @@ instance FAlgebra Universal where
 
     mape f (U p1 p2 pt a) = proveU p1 p2 pt U p1 p2 pt (mape f a)
 
-instance Show (Sig Universal t a) where
-    show (U _ _ _ a) = show a
+instance Show a => Show (Sig Universal t a) where
+    show (U _ _ _ a) = showSig a
+
+showSig :: (Show a, FAlgebra alg) => Sig alg t a -> String
+showSig _ = "a"
 
 instance (Show a, Poset a) => Poset (Free (Sig Universal) '[] a) where
     inf e1 e2 = Free $ U (Proxy::Proxy Poset) (Proxy::Proxy Poset) (Proxy::Proxy '[]) $ Si e1 e2
@@ -430,7 +477,7 @@ instance (Show (Logic a), Show a) => Show (Sig Topology t a) where
     show (Se a1 a2) = show a1++"=="++show a2
 
 instance {-#OVERLAPS#-}
-    Show (Sig Topology ['Logic,'Logic] a) where
+    Show (Sig Topology ['Logic,t1,t2,t3] a) where
     show _ = "<<overflow>>"
 
 instance Poset (Free (Sig Topology) '[ 'Logic] a) where
@@ -459,7 +506,7 @@ instance (Show (Logic a), Show a) => Show (Sig Semigroup t a) where
     show (Sa a1 a2) = show a1++"+"++show a2
 
 instance {-#OVERLAPS#-}
-    Show (Sig Semigroup '[ 'Logic, 'Logic ] a) where
+    Show (Sig Semigroup '[ 'Logic, t1,t2,t3 ] a) where
     show _ = "<<overflow>>"
 
 instance Poset (Free (Sig Semigroup) '[ 'Logic ] a) where
@@ -505,8 +552,8 @@ instance
     show (SN2 s) = show s
     show (Sp a1 a2) = show a1++".*"++show a2
 
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, t ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , t ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, t1,t2,t3 ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , t1,t2,t3 ] a) where show _ = "<<overflow>>"
 
 instance Poset (Free (Sig Module) '[ 'Logic ] a) where
     inf e1 e2 = FreeTag $ SM $ SS $ ST $ Si e1 e2
@@ -555,8 +602,8 @@ instance
     show (SH s) = show s
     show (Sd a1 a2) = show a1++"<>"++show a2
 
-instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Scalar, t ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Logic , t ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Scalar, t1,t2,t3 ] a) where show _ = "<<overflow>>"
+instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Logic , t1,t2,t3 ] a) where show _ = "<<overflow>>"
 
 instance Poset (Free (Sig Hilbert) '[ 'Logic ] a) where
     inf e1 e2 = FreeTag $ SH $ SM $ SS $ ST $ Si e1 e2
