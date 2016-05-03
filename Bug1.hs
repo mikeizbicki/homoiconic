@@ -1,17 +1,8 @@
-module Main
-    where
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 
-import Prelude
+data Foo a = Foo a a
 
-data LogicKind = LK_Bool
+pattern A a1 a2 = Foo a1 a2
+pattern B a1 a2 = A a1 a2
 
-type Logic a = LogicRep a (LogicKind' a)
-
-type family LogicRep a (k :: LogicKind) where
-    LogicRep a LK_Bool = Bool
-
-class Topology a where
---     type Neighbor a :: *
-    type LogicKind' :: LogicKind
-
-    isNeighbor :: a -> a -> Logic a
