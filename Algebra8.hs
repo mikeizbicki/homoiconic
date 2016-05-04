@@ -258,7 +258,13 @@ type family AppScalar (xs::[AT]) :: [AT] where
     AppScalar xs              = 'Scalar ': xs
 
 type TypeConstraints (t::[AT]) (a::Type)
-    = (App (AppScalar t) a ~ Scalar (App t a))
+--     = (Int ~ Int)
+    = ( App (AppScalar t) a ~ Scalar (App t a)
+--       , AppScalar (AppScalar t) ~ AppScalar t
+--       , Scalar (Scalar (App t a)) ~ Scalar (App t a)
+--       , App (AppScalar (AppScalar t)) a ~ Scalar (Scalar (App t a))
+--     , AppScalar (AppScalar t) ~ AppScalar t
+      )
 
 ----------------------------------------
 
@@ -279,6 +285,9 @@ class FAlgebra alg => Variety alg where
     laws :: [Law alg]
 
 newtype Var = Var String
+
+type instance Scalar Var = ()
+type instance Logic Var = ()
 
 instance Show Var where
     show (Var x) = x
@@ -303,8 +312,8 @@ instance Show (Free (Sig alg) '[] Var) => Show (Law alg) where
 
 --------------------
 
-reassoc :: Free (Sig Hilbert) '[ 'Logic] a -> Logic (Expr Hilbert a)
--- reassoc (Expr_inf (Expr_inf e1 e2) e3) = Expr_inf e1 $ reassoc (Expr_inf e2 e3)
+reassoc :: (ViewPoset alg t, TypeConstraints t a) => Free (Sig alg) t a -> Free (Sig alg) t a
+reassoc (Expr_inf (Expr_inf e1 e2) e3) = Expr_inf e1 $ reassoc (Expr_inf e2 e3)
 reassoc e = e
 
 func :: Topology a => a -> a -> Logic a
@@ -419,8 +428,8 @@ instance Show a => Show (Sig Universal t a) where
 showSig :: (Show a, FAlgebra alg) => Sig alg t a -> String
 showSig _ = "a"
 
-instance (Show a, Poset a) => Poset (Free (Sig Universal) '[] a) where
-    inf e1 e2 = Free $ U (Proxy::Proxy Poset) (Proxy::Proxy Poset) (Proxy::Proxy '[]) $ Si e1 e2
+-- instance (Show a, Poset a) => Poset (Free (Sig Universal) '[] a) where
+--     inf e1 e2 = Free $ U (Proxy::Proxy Poset) (Proxy::Proxy Poset) (Proxy::Proxy '[]) $ Si e1 e2
 
 toUniversal :: Free (Sig alg) '[] a -> Free (Sig Universal) '[] a
 toUniversal (Pure a) = (Pure a)
@@ -438,8 +447,8 @@ instance FAlgebra Poset where
 --------------------
 
 class FAlgebra alg => ViewPoset alg t where
-    fromSigPoset :: Sig Poset '[] (App t a) -> Sig alg    t         a
-    toSigPoset   :: Sig alg     t        a  -> Sig Poset '[] (App t a)
+    fromSigPoset :: Sig Poset '[] (      a) -> Sig alg    t         a
+    toSigPoset   :: Sig alg     t        a  -> Sig Poset '[] (      a)
 
 instance ViewPoset Poset '[] where
     fromSigPoset = P.id
@@ -448,18 +457,17 @@ instance ViewPoset Poset '[] where
 pattern Sig_inf e1 e2 <- (toSigPoset -> Si e1 e2) where
     Sig_inf e1 e2 = fromSigPoset $ Si e1 e2
 
--- pattern Expr_inf e1 e2 = Clock (Sig_inf e1 e2)
+pattern Expr_inf ::
+    ( ViewPoset alg t
+    , TypeConstraints t a
+    ) => Free (Sig alg) t a
+      -> Free (Sig alg) t a
+      -> Free (Sig alg) t a
+pattern Expr_inf e1 e2 <- Free (toSigPoset -> Si e1 e2) where
+    Expr_inf e1 e2 = Free $ fromSigPoset $ Si e1 e2
 
--- pattern Expr_inf e1 e2 <- Free (toSigPoset -> Si e1 e2) ::
---     ( TypeConstraints t a
---     , ViewPoset alg t
---     ) => Free (Sig alg) t a
---       -> Free (Sig alg) t a
---       -> Free (Sig alg) t a
-
--- pattern Expr_inf e1 e2 = (Sig_inf e1 e2)
-
--- pattern Expr_inf e1 e2 = FreeTag (Sig_inf e1 e2) :: ViewPoset alg '[ 'Logic ] => Logic (Expr alg a)
+instance (ViewPoset alg t, TypeConstraints t a) => Poset (Free (Sig alg) t a) where
+    inf = Expr_inf
 
 --------------------
 
@@ -480,23 +488,16 @@ instance Variety Poset where
 --------------------
 
 instance Show a => Show (Sig Poset '[] a) where
---     show (Si a1 a2) = show a1++"&&"++show a2
-    show (Sig_inf a1 a2) = show a1++"&&"++show a2
-
-instance Poset (Free (Sig Poset) '[] a) where
-    inf e1 e2 = Free $ Si e1 e2
---     inf e1 e2 = Free $ Sig_inf e1 e2
---     inf e1 e2 = _ e1 e2
+    show (Si a1 a2) = show a1++"&&"++show a2
 
 ----------------------------------------
 
 instance FAlgebra Topology where
     data Sig Topology t a where
-        ST :: {-#UNPACK#-}!(Sig Poset '[] (Logic a)) -> Sig Topology '[ 'Logic] a
+        ST :: {-#UNPACK#-}!(Sig Poset '[] a) -> Sig Topology '[ 'Logic] a
         Se :: a -> a -> Sig Topology '[ 'Logic] a
 
-    alg _ _ = error "Topology.alg should not be constructible"
-    algTag p (ST s)     = alg Proxy s
+    alg p (ST s) = alg Proxy s
     algTag p (Se a1 a2) = a1==a2
 
     mape f (ST s) = ST $ mape f s
@@ -515,10 +516,26 @@ instance ViewTopology Topology '[ 'Logic ] where
 pattern Sig_equals e1 e2 <- (toSigTopology -> Se e1 e2) where
     Sig_equals e1 e2 = fromSigTopology $ Se e1 e2
 
+pattern Expr_equals ::
+    ( ViewTopology alg ('Logic ': t)
+    , TypeConstraints t a
+    ) => Free (Sig alg) t a
+      -> Free (Sig alg) t a
+      -> Free (Sig alg) ('Logic ': t) a
+pattern Expr_equals e1 e2 <- FreeTag (toSigTopology -> Se e1 e2) where
+    Expr_equals e1 e2 = FreeTag $ fromSigTopology $ Se e1 e2
+
+instance
+    ( TypeConstraints t a
+    , ViewTopology alg ('Logic ': t)
+    ) => Topology (Free (Sig alg) t a)
+        where
+    (==) = Expr_equals
+
 --------------------
 
 instance ViewPoset Topology '[ 'Logic ] where
-    toSigPoset (ST s) = s
+    toSigPoset (ST s) =  s
     fromSigPoset s = ST s
 
 --------------------
@@ -527,17 +544,8 @@ instance (Show (Logic a), Show a) => Show (Sig Topology t a) where
     show (ST a) = show a
     show (Se a1 a2) = show a1++"=="++show a2
 
-instance {-#OVERLAPS#-}
-    Show (Sig Topology ['Logic,t1,t2,t3] a) where
+instance {-#OVERLAPS#-} Show (Sig Topology (t1 ': t2 ': t3 ': t) a) where
     show _ = "<<overflow>>"
-
-instance Poset (Free (Sig Topology) '[ 'Logic] a) where
-    inf e1 e2 = FreeTag $ Sig_inf e1 e2
-
-instance Topology (Free (Sig Topology) '[] a) where
---     type Logic (Free (Sig Topology) 'Id a) = Free (Sig Topology) (Tag 'Logic 'Id) a
---     (==) e1 e2 = FreeTag $ Se e1 e2
-    (==) e1 e2 = FreeTag $ Sig_equals e1 e2
 
 ----------------------------------------
 
@@ -555,16 +563,34 @@ instance FAlgebra Semigroup where
 
 --------------------
 
-class {-ViewTopology alg t =>-} ViewSemigroup s alg t where
-    toSigSemigroup   :: Sig alg t a -> Sig Semigroup s a
-    fromSigSemigroup :: Sig Semigroup s a -> Sig alg t a
+class ViewTopology alg ('Logic ': t) => ViewSemigroup alg t where
+    toSigSemigroup   :: Sig alg t a -> Sig Semigroup '[] (      a)
+    fromSigSemigroup :: Sig Semigroup '[] (      a) -> Sig alg t a
 
-instance ViewSemigroup t Semigroup t where
+instance ViewSemigroup Semigroup '[] where
     toSigSemigroup = P.id
     fromSigSemigroup = P.id
 
 pattern Sig_plus e1 e2 <- (toSigSemigroup -> Sa e1 e2) where
     Sig_plus e1 e2 = fromSigSemigroup $ Sa e1 e2
+
+pattern Expr_plus ::
+    ( ViewSemigroup alg t
+    , TypeConstraints t a
+    ) => Free (Sig alg) t a
+      -> Free (Sig alg) t a
+      -> Free (Sig alg) t a
+pattern Expr_plus e1 e2 <- Free (toSigSemigroup -> Sa e1 e2) where
+    Expr_plus e1 e2 = Free $ fromSigSemigroup $ Sa e1 e2
+
+instance
+    ( TypeConstraints t a
+    , ViewSemigroup alg t
+    ) => Semigroup (Free (Sig alg) t a)
+        where
+    (+) = Expr_plus
+
+--------------------
 
 instance ViewTopology Semigroup '[ 'Logic ] where
     toSigTopology (SS s) = s
@@ -584,23 +610,12 @@ instance {-#OVERLAPS#-}
     Show (Sig Semigroup '[ 'Logic, t1,t2,t3 ] a) where
     show _ = "<<overflow>>"
 
-instance Poset (Free (Sig Semigroup) '[ 'Logic ] a) where
---     inf e1 e2 = FreeTag $ SS $ ST $ Si e1 e2
-    inf e1 e2 = FreeTag $ Sig_inf e1 e2
-
-instance Topology (Free (Sig Semigroup) '[] a) where
---     (==) e1 e2 = FreeTag $ SS $ Se e1 e2
-    (==) e1 e2 = FreeTag $ Sig_equals e1 e2
-
-instance Semigroup (Free (Sig Semigroup) '[] a) where
-    (+) e1 e2 = Free $ Sig_plus e1 e2
-
 ----------------------------------------
 
 instance FAlgebra Module where
     data Sig Module t a where
         SM  :: {-#UNPACK#-}!(Sig Semigroup t          a) -> Sig Module t                   a
-        SN1 :: {-#UNPACK#-}!(Sig Module    '[ 'Logic] a) -> Sig Module '[ 'Logic,'Scalar ] a
+        SN1 :: {-#UNPACK#-}!(Sig Module    '[ t     ] a) -> Sig Module '[ t     ,'Scalar ] a
         SN2 :: {-#UNPACK#-}!(Sig Module    '[       ] a) -> Sig Module '[        'Scalar ] a
         Sp :: Scalar a -> a -> Sig Module '[] a
 
@@ -620,26 +635,47 @@ instance FAlgebra Module where
 
 --------------------
 
-class ViewModule s alg t where
-    toSigModule :: Sig alg t a -> Sig Module s a
-    fromSigModule :: Sig Module s a -> Sig alg t a
+class ViewSemigroup alg t => ViewModule alg t where
+    toSigModule :: Sig alg t a -> Sig Module '[] (      a)
+    fromSigModule :: Sig Module '[] (      a) -> Sig alg t a
 
-instance ViewModule '[] Module '[] where
+instance ViewModule Module '[] where
     toSigModule = P.id
     fromSigModule = P.id
 
-instance ViewModule '[ ] Module '[ 'Scalar ] where
+instance ViewModule Module '[ 'Scalar ] where
     toSigModule (SN2 s) = s
     fromSigModule s = SN2 s
 
 pattern Sig_dotmul e1 e2 <- (toSigModule -> Sp e1 e2) where
     Sig_dotmul e1 e2 = fromSigModule $ Sp e1 e2
 
-instance ViewSemigroup '[] Module '[] where
+pattern Expr_dotmul ::
+    ( ViewModule alg t
+    , TypeConstraints t a
+    ) => Free (Sig alg) (AppScalar t) a
+      -> Free (Sig alg) t a
+      -> Free (Sig alg) t a
+pattern Expr_dotmul e1 e2 <- Free (toSigModule -> Sp e1 e2) where
+    Expr_dotmul e1 e2 = Free $ fromSigModule $ Sp e1 e2
+
+instance
+    ( TypeConstraints t a
+    , ViewModule alg t
+    , ViewModule alg (AppScalar t)
+    , AppScalar (AppScalar t) ~ AppScalar t
+    , Scalar (Scalar (App t a)) ~ Scalar (App t a)
+    ) => Module (Free (Sig alg) t a)
+        where
+    (.*) = Expr_dotmul
+
+--------------------
+
+instance ViewSemigroup Module '[] where
     toSigSemigroup (SM s) = s
     fromSigSemigroup s = SM s
 
-instance ViewSemigroup '[ ] Module '[ 'Scalar ] where
+instance ViewSemigroup Module '[ 'Scalar ] where
     toSigSemigroup (SN2 (SM s)) = s
     fromSigSemigroup s = SN2 $ SM s
 
@@ -652,17 +688,21 @@ instance ViewPoset Module '[ 'Logic ] where
     fromSigPoset s = SM $ fromSigPoset s
 
 instance ViewPoset Module '[ 'Logic, 'Scalar ] where
---     toSigPoset (SN1 s) = _ s
---     toSigPoset (SN1 (toSigPoset -> s)) = _ s
---     toSigPoset (SN1 (SM (SS (ST s)))) = _ s
---     fromSigPoset s = SN1 $ SM $ fromSigPoset s
+    toSigPoset (SN1 (toSigPoset -> s)) = s
+    fromSigPoset s = SN1 $ fromSigPoset s
+
+instance ViewTopology Module '[ 'Logic, 'Scalar ] where
+    toSigTopology (SN1 (toSigTopology -> s)) = s
+    fromSigTopology s = SN1 $ fromSigTopology s
 
 --------------------
 
 instance
     ( Show a
-    , Show (Logic a)
     , Show (Scalar a)
+    , Show (Logic a)
+    , Show (Logic (Scalar a))
+    , Scalar (Scalar a) ~ Scalar a
     ) => Show (Sig Module t a)
         where
     show (SM s) = show s
@@ -670,40 +710,7 @@ instance
     show (SN2 s) = show s
     show (Sp a1 a2) = show a1++".*"++show a2
 
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Scalar, t1,t2,t3 ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Module '[ 'Logic , t1,t2,t3 ] a) where show _ = "<<overflow>>"
-
-instance Poset (Free (Sig Module) '[ 'Logic ] a) where
-    inf e1 e2 = FreeTag $ Sig_inf e1 e2
---     inf e1 e2 = FreeTag $ SM $ SS $ ST $ Si e1 e2
-
-instance Topology (Free (Sig Module) '[] a) where
-     (==) e1 e2 = FreeTag $ Sig_equals e1 e2
---      (==) e1 e2 = FreeTag $ SM $ SS $ Se e1 e2
-
-instance Semigroup (Free (Sig Module) '[] a) where
-    (+) e1 e2 = Free $ Sig_plus e1 e2
---     (+) e1 e2 = Free $ SM $ Sa e1 e2
-
-instance Scalar (Scalar a) ~ Scalar a => Module (Free (Sig Module) '[] a) where
-    (.*) e1 e2 = Free $ Sig_dotmul e1 e2
---     (.*) e1 e2 = Free $ Sp e1 e2
-
-instance Scalar (Scalar a) ~ Scalar a => Poset (Free (Sig Module) '[ 'Logic, 'Scalar ] a) where
-    inf e1 e2 = FreeTag $ SN1 $ Sig_inf e1 e2
---     inf e1 e2 = FreeTag $ (SN1 . SM . SS . ST) $ Si e1 e2
-
-instance Scalar (Scalar a) ~ Scalar a => Topology (Free (Sig Module) '[ 'Scalar ] a) where
-    (==) e1 e2 = FreeTag $ SN1 $ Sig_equals e1 e2
---     (==) e1 e2 = FreeTag $ SN1 $ SM $ SS $ Se e1 e2
-
-instance Scalar (Scalar a) ~ Scalar a => Semigroup (Free (Sig Module) '[ 'Scalar ] a) where
-    (+) e1 e2 = Free    $ Sig_plus e1 e2
---     (+) e1 e2 = Free    $ SN2 $ SM $ Sa e1 e2
-
-instance Scalar (Scalar a) ~ Scalar a => Module (Free (Sig Module) '[ 'Scalar ] a) where
---     (.*) e1 e2 = Free $ SN2 $ Sp e1 e2
-    (.*) e1 e2 = Free $ Sig_dotmul e1 e2
+instance {-#OVERLAPS#-} Show (Sig Module (t1 ': t2 ': t3 ': ts) a) where show _ = "<<overflow>>"
 
 ----------------------------------------
 
@@ -719,20 +726,11 @@ instance FAlgebra Hilbert where
     mape f (SH s) = SH $ mape f s
     mape f (Sd a1 a2) = Sd (f a1) (f a2)
 
-instance
-    ( Show a
-    , Show (Logic a)
-    , Show (Scalar a)
-    ) => Show (Sig Hilbert t a)
-        where
-    show (SH s) = show s
-    show (Sd a1 a2) = show a1++"<>"++show a2
-
 --------------------
 
-class ViewHilbert alg t where
-    toSigHilbert   :: Sig alg t a -> Sig Hilbert '[ 'Scalar ] a
-    fromSigHilbert :: Sig Hilbert '[ 'Scalar ] a -> Sig alg t a
+class ViewModule alg t => ViewHilbert alg t where
+    toSigHilbert   :: Sig alg      t           a -> Sig Hilbert '[ 'Scalar ] a
+    fromSigHilbert :: Sig Hilbert '[ 'Scalar ] a -> Sig alg      t           a
 
 instance ViewHilbert Hilbert '[ 'Scalar ] where
     toSigHilbert = P.id
@@ -740,6 +738,28 @@ instance ViewHilbert Hilbert '[ 'Scalar ] where
 
 pattern Sig_dp e1 e2 <- (toSigHilbert -> Sd e1 e2) where
     Sig_dp e1 e2 = fromSigHilbert $ Sd e1 e2
+
+pattern Expr_dp ::
+    ( ViewHilbert alg ('Scalar ': t)
+    , TypeConstraints t a
+    ) => Free (Sig alg) t a
+      -> Free (Sig alg) t a
+      -> Free (Sig alg) ('Scalar ': t) a
+pattern Expr_dp e1 e2 <- FreeTag (toSigHilbert -> Sd e1 e2) where
+    Expr_dp e1 e2 = FreeTag $ fromSigHilbert $ Sd e1 e2
+
+instance
+    ( TypeConstraints t a
+    , ViewModule alg t
+    , ViewHilbert alg (AppScalar t)
+    , AppScalar (AppScalar t) ~ AppScalar t
+    , Scalar (Scalar (App t a)) ~ Scalar (App t a)
+    , AppScalar t ~ ('Scalar ': t)
+    ) => Hilbert (Free (Sig alg) t a)
+        where
+    (<>) = Expr_dp
+
+--------------------
 
 instance ViewPoset Hilbert '[ 'Logic ] where
     toSigPoset (SH (toSigPoset -> s)) = s
@@ -749,116 +769,44 @@ instance ViewTopology Hilbert '[ 'Logic ] where
     toSigTopology (SH (toSigTopology -> s)) = s
     fromSigTopology s = SH $ fromSigTopology s
 
-instance ViewSemigroup '[] Hilbert '[ ] where
+instance ViewSemigroup Hilbert '[ ] where
     toSigSemigroup (SH (toSigSemigroup -> s)) = s
     fromSigSemigroup s = SH $ fromSigSemigroup s
 
-instance ViewModule '[] Hilbert '[ ] where
+instance ViewModule Hilbert '[ ] where
     toSigModule (SH (toSigModule -> s)) = s
     fromSigModule s = SH $ fromSigModule s
 
--- instance ViewPoset Hilbert '[ 'Logic, 'Scalar ] where
---     toSigPoset (SH (toSigPoset -> s)) = s
---     fromSigPoset s = SH $ fromSigPoset s
+instance ViewPoset Hilbert '[ 'Logic, 'Scalar ] where
+    toSigPoset (SH (toSigPoset -> s)) = s
+    fromSigPoset s = SH $ fromSigPoset s
 
-instance ViewSemigroup '[] Hilbert '[ 'Scalar ] where
+instance ViewTopology Hilbert '[ 'Logic, 'Scalar ] where
+    toSigTopology (SH (toSigTopology -> s)) = s
+    fromSigTopology s = SH $ fromSigTopology s
+
+instance ViewSemigroup Hilbert '[ 'Scalar ] where
     toSigSemigroup (SH (toSigSemigroup -> s)) = s
     fromSigSemigroup s = SH $ fromSigSemigroup s
 
-instance ViewModule '[] Hilbert '[ 'Scalar ] where
+instance ViewModule Hilbert '[ 'Scalar ] where
     toSigModule (SH (toSigModule -> s)) = s
     fromSigModule s = SH $ fromSigModule s
-
 
 --------------------
 
-instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Scalar, t1,t2,t3 ] a) where show _ = "<<overflow>>"
-instance {-#OVERLAPS#-} Show (Sig Hilbert '[ 'Logic , t1,t2,t3 ] a) where show _ = "<<overflow>>"
-
-instance {-#OVERLAPS#-}
-    ( ViewPoset alg '[]
-    ) => Poset (Free (Sig alg) '[] a)
+instance
+    ( Show a
+    , Show (Logic a)
+    , Show (Scalar a)
+    , Show (Logic (Scalar a))
+    , Scalar (Scalar a) ~ Scalar a
+    ) => Show (Sig Hilbert t a)
         where
-    inf e1 e2 = Free $ Sig_inf e1 e2
+    show (SH s) = show s
+    show (Sd a1 a2) = show a1++"<>"++show a2
 
-instance {-#OVERLAPS#-}
-    ( ViewPoset alg ('Logic ': t )
-    , TypeConstraints t a
-    , Logic (App t (Free (Sig alg) t a)) ~ Free (Sig alg) ('Logic ': t) a
-    ) => Poset (Free (Sig alg) ( 'Logic ': t) a)
-        where
-    inf e1 e2 = FreeTag $ Sig_inf e1 e2
-
-instance {-#OVERLAPS#-}
-    ( ViewTopology alg ('Logic ': t)
-    , TypeConstraints t a
-    , Logic (App t (Free (Sig alg) t a)) ~ Free (Sig alg) ('Logic ': t) a
-    ) => Topology (Free (Sig alg) t a)
-        where
-    (==) e1 e2 = FreeTag $ Sig_equals e1 e2
-
-instance {-#OVERLAPS#-}
-    ( ViewSemigroup '[] alg t
-    , ViewTopology alg ('Logic ': t)
-    , TypeConstraints t a
-    , Logic (App t (Free (Sig alg) t a)) ~ Free (Sig alg) ('Logic ': t) a
-    ) => Semigroup (Free (Sig alg) t a)
-        where
-    (+) e1 e2 = Free $ Sig_plus e1 e2
-
-instance {-#OVERLAPS#-}
-    ( ViewModule '[] alg t
-    , ViewModule '[] alg (AppScalar t)
-    , ViewSemigroup '[] alg t
-    , ViewSemigroup '[] alg (AppScalar t)
-    , ViewTopology alg ('Logic ': t)
-    , ViewTopology alg ('Logic ': AppScalar t)
-    , TypeConstraints t a
-    , Logic (App t (Free (Sig alg) t a)) ~ Free (Sig alg) ('Logic ': t) a
-    , Logic (App (AppScalar t) (Free (Sig alg) (AppScalar t) a)) ~ Free (Sig alg) ('Logic ': AppScalar t) a
-    , AppScalar (AppScalar t) ~ AppScalar t
-    , Scalar (Scalar (App t a)) ~ Scalar (App t a)
-    ) => Module (Free (Sig alg) t a)
-        where
-    (.*) e1 e2 = Free $ Sig_dotmul e1 e2
-
--- instance {-#OVERLAPS#-} ViewTopology alg '[ 'Logic ] => Topology (Free (Sig alg) '[ 'Logic] a) where
---     (==) e1 e2 = FreeTag $ Sig_equals e1 e2
-
--- instance Poset (Free (Sig Hilbert) '[ 'Logic ] a) where
---     inf e1 e2 = FreeTag $ Sig_inf e1 e2
--- --     inf e1 e2 = FreeTag $ SH $ SM $ SS $ ST $ Si e1 e2
-
--- instance Topology (Free (Sig Hilbert) '[] a) where
---     (==) e1 e2 = FreeTag $ Sig_equals e1 e2
--- --     (==) e1 e2 = FreeTag $ SH $ SM $ SS $ Se e1 e2
---
--- instance Semigroup (Free (Sig Hilbert) '[] a) where
---     (+) e1 e2 = Free $ Sig_plus e1 e2
--- --     (+) e1 e2 = Free $ SH $ SM $ Sa e1 e2
---
--- instance Scalar (Scalar a) ~ Scalar a => Module (Free (Sig Hilbert) '[] a) where
---     (.*) e1 e2 = Free $ Sig_dotmul e1 e2
--- --     (.*) e1 e2 = Free $ SH $ Sp e1 e2
---
--- instance Scalar (Scalar a) ~ Scalar a => Hilbert (Free (Sig Hilbert) '[] a) where
---     (<>) e1 e2 = FreeTag $ Sig_dp e1 e2
--- --     (<>) e1 e2 = FreeTag $ Sd e1 e2
-
--- instance Scalar (Scalar a) ~ Scalar a => Poset (Free (Sig Hilbert) '[ 'Logic, 'Scalar ] a) where
---     inf e1 e2 = FreeTag $ SH $ SN1 $ Sig_inf e1 e2
--- --     inf e1 e2 = FreeTag $ SH $ SN1 $ SM $ SS $ ST $ Si e1 e2
-
--- instance Scalar (Scalar a) ~ Scalar a => Topology (Free (Sig Hilbert) '[ 'Scalar ] a) where
---     (==) e1 e2 = FreeTag $ SH $ SN1 $ Sig_equals e1 e2
--- --     (==) e1 e2 = FreeTag $ SH $ SN1 $ SM $ SS $ Se e1 e2
---
--- instance Scalar (Scalar a) ~ Scalar a => Semigroup (Free (Sig Hilbert) '[ 'Scalar ] a) where
---     (+) e1 e2 = Free    $ Sig_plus e1 e2
--- --     (+) e1 e2 = Free    $ SH $ SN2 $ SM $ Sa e1 e2
---
--- instance Scalar (Scalar a) ~ Scalar a => Module (Free (Sig Hilbert) '[ 'Scalar ] a) where
---     (.*) e1 e2 = Free    $ Sig_dotmul e1 e2
+instance {-#OVERLAPS#-} Show (Sig Hilbert (t1 ': t2 ': t3 ': ts) a) where show _ = "<<overflow>>"
 
 --------------------------------------------------------------------------------
 
@@ -881,17 +829,3 @@ type family (++) (xs1:: [x]) (xs2:: [x]) :: [x] where
     '[] ++ xs2 = xs2
     xs1 ++ '[] = xs1
     (x ': xs1) ++ xs2 = x ': (xs1++xs2)
-
-
--- type instance App (Tag t t') a = App t (App t' a)
-
--- type family MaybeTag (s::[AT]) (t::[AT]) where
---     MaybeTag 'Scalar (Tag 'Scalar t) = (Tag 'Scalar t)
---     MaybeTag s t = Tag s t
-
--- type family Nest (t::AT) (a::AT) :: AT where
---     Nest 'Id     t       = t
---     Nest t       'Id     = t
---     Nest 'Scalar (Tag 'Scalar t) = Tag 'Scalar t
---     Nest s       (Tag 'Id     t) = Tag s       t
---     Nest s       t       = Tag s t
