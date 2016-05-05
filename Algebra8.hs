@@ -74,8 +74,8 @@ instance TagCat 'Id (->) where
 
 --------------------------------------------------------------------------------
 
-type family Logic  a
-type family Scalar a
+-- type family Logic  a
+-- type family Scalar a
 
 class Poset a where
     inf :: a -> a -> a
@@ -85,7 +85,7 @@ class Poset a where
 
 -- class Topology a where
 class Poset (Logic a) => Topology a where
---     type family Logic a
+    type family Logic a
     (==) :: a -> a -> Logic a
 
 class Topology a => Semigroup a where
@@ -94,7 +94,7 @@ class Topology a => Semigroup a where
 -- class (Scalar (Scalar a)~Scalar a, Semigroup a) => Module a where
 -- class (Scalar (Scalar a)~Scalar a, Semigroup (Scalar a), Semigroup a) => Module a where
 class (Scalar (Scalar a)~Scalar a, Module (Scalar a), Semigroup a) => Module a where
---     type family Scalar a
+    type family Scalar a
 -- class Semigroup a => Module a where
 -- class (Semigroup a, Semigroup (Scalar a)) => Module a where
 -- class (Semigroup a, Module (Scalar a)) => Module a where
@@ -106,42 +106,42 @@ class Module a => Hilbert a where
 
 ----------------------------------------
 
-type instance Logic () = ()
-type instance Scalar () = ()
+-- type instance Logic () = ()
+-- type instance Scalar () = ()
 
-type instance Logic Bool = Bool
-type instance Scalar Bool = ()
+-- type instance Logic Bool = Bool
+-- type instance Scalar Bool = ()
 instance Poset Bool where
     inf = (P.&&)
 instance Topology Bool where
---     type Logic Bool = Bool
+    type Logic Bool = Bool
     (==) = (P.==)
 
-type instance Logic Int = Bool
-type instance Scalar Int = Int
+-- type instance Logic Int = Bool
+-- type instance Scalar Int = Int
 instance Poset Int where
     inf = P.min
 instance Topology Int where
---     type Logic Int = Int
+    type Logic Int = Bool
     (==) = (P.==)
 instance Semigroup Int where (+) = (P.+)
 instance Module Int where
---     type Scalar Int = Int
+    type Scalar Int = Int
     (.*) = (P.*)
 instance Hilbert Int where
     (<>) = (P.*)
 
-type instance Logic (a,b) = (Logic a, Logic b)
-type instance Scalar (a,b) = Scalar b
+-- type instance Logic (a,b) = (Logic a, Logic b)
+-- type instance Scalar (a,b) = Scalar b
 instance (Poset a, Poset b) => Poset (a,b) where
     inf (a1,b1) (a2,b2) = (inf a1 a2, inf b1 b2)
 instance (Topology a, Topology b) => Topology (a,b) where
---     type Logic (a,b) = (Logic a, Logic b)
+    type Logic (a,b) = (Logic a, Logic b)
     (a1,b1)==(a2,b2) = (a1==a2,b1==b2)
 instance (Semigroup a, Semigroup b) => Semigroup (a,b) where
     (a1,b1)+(a2,b2) = (a1+a2,b1+b2)
 instance (Module a, Module b, Semigroup (Scalar b), Scalar a~Scalar b) => Module (a,b) where
---     type Scalar (a,b) = Scalar b
+    type Scalar (a,b) = Scalar b
     s.*(a,b) = (s.*a,s.*b)
 instance (Hilbert a, Hilbert b, Semigroup (Scalar b), Scalar a~Scalar b) => Hilbert (a,b) where
     (a1,b1)<>(a2,b2) = (a1<>a2)+(b1<>b2)
@@ -162,9 +162,6 @@ z = Pure 3
 --------------------------------------------------------------------------------
 
 type Expr alg a = Free (Sig alg) '[] a
-
-type ExprAlg  alg = Free (Sig alg      ) '[] Var
-type ExprType a   = Free (Sig Universal) '[] a
 
 data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
     FreeTag  :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
@@ -249,9 +246,9 @@ eval (FreeTag s) = algTag (Proxy::Proxy a) $ mape eval s
 
 ----------------------------------------
 
-type instance Logic  (Free (Sig alg) t a) = Free (Sig alg) ('Logic  ': t) a
--- type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) ('Scalar ': t) a
-type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) (AppScalar t) a
+-- type instance Logic  (Free (Sig alg) t a) = Free (Sig alg) ('Logic  ': t) a
+-- -- type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) ('Scalar ': t) a
+-- type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) (AppScalar t) a
 
 type family AppScalar (xs::[AT]) :: [AT] where
     AppScalar ('Scalar ': xs) = 'Scalar ': xs
@@ -286,8 +283,8 @@ class FAlgebra alg => Variety alg where
 
 newtype Var = Var String
 
-type instance Scalar Var = ()
-type instance Logic Var = ()
+-- type instance Scalar Var = ()
+-- type instance Logic Var = ()
 
 instance Show Var where
     show (Var x) = x
@@ -345,94 +342,34 @@ frock2 f g = \x y -> eval $ f $ liberate2 g x y
 
 --------------------------------------------------------------------------------
 
--- class Functor f where
---     type Elem f :: Type
---     type SetElem f a :: Type
--- --     fmap :: (Elem f -> b) -> f -> SetElem f b
---     fmap :: (a -> Elem f) -> SetElem f a -> f
+-- NOTE:
+-- There's no hope for expression trees based on the type of `a` rather than `alg`.
+-- This is because the pattern/view encoding we've switched to allows only a single instance of each class.
+-- A workaround is to create a class that has the exact properties of the given type.
+-- I think this is only going to be possible with template haskell though.
+-- I don't think the loss of expression trees for types is a big deal;
+-- I can't actually think of any use cases.
+
+-- class Universal x
+-- instance Universal x
 --
--- instance Functor [a] where
---     type Elem [a] = a
---     type SetElem [a] b = [b]
---     fmap = P.map
+-- type family View (alg1::Type->Constraint) :: (Type->Constraint) -> [AT] -> Constraint
+-- type instance View Poset = ViewPoset
 --
--- instance FAlgebra Functor where
---     data Sig Functor t f where
--- --         Sfmap :: (Elem f -> b) -> f -> Sig Functor '[] f
---         Sfmap :: (a -> Elem f) -> SetElem f a -> Sig Functor '[] f
+-- instance ViewPoset Universal '[] where
+-- --     toSigPoset (U s) = s
+-- --     fromSigPoset s = U s
 --
---     alg p (Sfmap e1 e2) = fmap e1 e2
+-- instance FAlgebra Universal where
+--     data Sig Universal t a where
+--         U :: (FAlgebra alg, View alg Universal t) => Sig alg t a -> Sig Universal t a
 --
---     algTag = error "Functor.algTag"
+-- --     alg p (U s) = alg p s
+-- --     algTag p (U s) = algTag p s
 --
---     mape f (Sfmap e1 e2) = undefined -- Sfmap (_ e1) (_ e2)
+--     mape f (U s) = U $ mape f s
 --
--- instance Show (Sig Functor t f) where
---     show (Sfmap e1 e2) = "fmap <<function>> " -- ++show e2
-
---------------------------------------------------------------------------------
-
-class Universal x
-instance Universal x
-
-class Subclass (cxt1::Type->Constraint) (cxt2::Type->Constraint) (t::[AT]) where
-    proveAlg :: Proxy cxt1
-             -> Proxy cxt2
-             -> Proxy t
-             -> (alg        a  => proxy a -> Sig alg t (App t a) -> App t a)
-             -> (alg (App t a) => proxy a -> Sig alg t (App t a) -> App t a)
-
-    proveAlgTag :: (t ~ (s ': s'))
-                => Proxy cxt1
-                -> Proxy cxt2
-                -> Proxy t
-                -> (alg         a  => proxy a -> Sig alg (s ': s') (App s' a) -> App (s ': s') a)
-                -> (alg (App s' a) => proxy a -> Sig alg (s ': s') (App s' a) -> App (s ': s') a)
-
-    proveU :: ()
-           => Proxy cxt1
-           -> Proxy cxt2
-           -> Proxy t
-           -> (( alg a
---                , Show (Sig alg t a)
-               ) => Proxy alg' -> Proxy alg -> Proxy t -> Sig alg t a -> Sig Universal t a)
-           -> (( --alg (App t a)
-               ) => Proxy alg' -> Proxy alg -> Proxy t -> Sig alg t a -> Sig Universal t a)
-
-
-instance Subclass Poset Poset '[] where
-    proveAlg    _ _ _ = P.id
---     proveU      _ _ _ = P.id
-
-instance FAlgebra Universal where
-    data Sig Universal t a where
-        U :: forall alg' alg t a.
-            ( FAlgebra alg
-            , alg a
-            , Subclass alg' alg t
-            ) => Proxy alg'
-              -> Proxy alg
-              -> Proxy t
-              -> Sig alg t a
-              -> Sig Universal t a
-
-
-    alg    p (U p1 p2 pt a) = proveAlg    p1 p2 pt alg    p a
-    algTag p (U p1 p2 pt a) = proveAlgTag p1 p2 pt algTag p a
-
-    mape f (U p1 p2 pt a) = proveU p1 p2 pt U p1 p2 pt (mape f a)
-
-instance Show a => Show (Sig Universal t a) where
-    show (U _ _ _ a) = showSig a
-
-showSig :: (Show a, FAlgebra alg) => Sig alg t a -> String
-showSig _ = "a"
-
--- instance (Show a, Poset a) => Poset (Free (Sig Universal) '[] a) where
---     inf e1 e2 = Free $ U (Proxy::Proxy Poset) (Proxy::Proxy Poset) (Proxy::Proxy '[]) $ Si e1 e2
-
-toUniversal :: Free (Sig alg) '[] a -> Free (Sig Universal) '[] a
-toUniversal (Pure a) = (Pure a)
+-- instance Show a => Show (Sig Universal t a) where
 
 --------------------------------------------------------------------------------
 
@@ -530,6 +467,7 @@ instance
     , ViewTopology alg ('Logic ': t)
     ) => Topology (Free (Sig alg) t a)
         where
+    type Logic (Free (Sig alg) t a) = Free (Sig alg) ('Logic  ': t) a
     (==) = Expr_equals
 
 --------------------
@@ -667,6 +605,8 @@ instance
     , Scalar (Scalar (App t a)) ~ Scalar (App t a)
     ) => Module (Free (Sig alg) t a)
         where
+    -- type Scalar (Free (Sig alg) t a) = Free (Sig alg) ('Scalar ': t) a
+    type Scalar (Free (Sig alg) t a) = Free (Sig alg) (AppScalar t) a
     (.*) = Expr_dotmul
 
 --------------------
