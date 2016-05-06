@@ -10,7 +10,7 @@ module Algebra8
     where
 
 import LocalPrelude
--- import Prelude (Functor(..), Applicative(..), Monad(..))
+import Prelude (Functor(..), Applicative(..), Monad(..))
 import Prelude ((.))
 import qualified Prelude as P
 
@@ -18,59 +18,6 @@ import Unsafe.Coerce
 
 import Data.Kind
 import GHC.TypeLits
-
---------------------------------------------------------------------------------
-
-{-
-class Category cat where
-    type Ob cat a :: Constraint
-    type Ob cat a = ()
-    id :: Ob cat a => cat a a
-    (.) :: cat b c -> cat a b -> cat a c
-
-type Functor = Functor_ (->) (->)
-
-class (Category cat1, Category cat2) => Functor_ cat1 cat2 f where
-    fmap :: cat1 a b -> cat2 (f a) (f b)
-
-----------------------------------------
-
-data TagT (t::AT) cat a b = TagT (App t a -> App t b) (cat a b)
-
-instance Category cat => Category (TagT t cat) where
-    type Ob (TagT t cat) a = Ob cat a
-    id = TagT id id
-    (.) (TagT f1 g1) (TagT f2 g2) = TagT (f1.f2) (g1.g2)
-
-class Category cat => TagCat t cat where
-    unTag :: proxy t -> cat a b -> App t a -> App t b
-
-instance Category cat => TagCat t (TagT t cat) where
-    unTag _ (TagT f g) = f
-
-instance {-#OVERLAPS#-} (Category cat, TagCat s cat) => TagCat s (TagT t cat) where
-    unTag p (TagT f g) = unTag p g
-
-($$) :: TagCat 'Id cat => cat a b -> a -> b
-($$) f a = unTag (Proxy::Proxy 'Id) f a
-
---------------------
-
-type family TagCats (ts::AT) :: Type -> Type -> Type where
-    TagCats 'Id       = Hask
-    TagCats (Tag s t) = TagT s (TagCats t)
-
-----------------------------------------
-
-type Hask = (->)
-
-instance Category (->) where
-    id = P.id
-    (.) = (P..)
-
-instance TagCat 'Id (->) where
-    unTag _ f = f
--}
 
 --------------------------------------------------------------------------------
 
@@ -108,6 +55,19 @@ class Module a => Hilbert a where
 
 -- type instance Logic () = ()
 -- type instance Scalar () = ()
+
+instance Poset () where
+    inf () () = ()
+instance Topology () where
+    type Logic () = ()
+    (==) () () = ()
+instance Semigroup () where
+    (+) () () = ()
+instance Module () where
+    type Scalar () = ()
+    (.*) () () = ()
+instance Hilbert () where
+    (<>) () () = ()
 
 -- type instance Logic Bool = Bool
 -- type instance Scalar Bool = ()
@@ -255,12 +215,7 @@ type family AppScalar (xs::[AT]) :: [AT] where
     AppScalar xs              = 'Scalar ': xs
 
 type TypeConstraints (t::[AT]) (a::Type)
---     = (Int ~ Int)
     = ( App (AppScalar t) a ~ Scalar (App t a)
---       , AppScalar (AppScalar t) ~ AppScalar t
---       , Scalar (Scalar (App t a)) ~ Scalar (App t a)
---       , App (AppScalar (AppScalar t)) a ~ Scalar (Scalar (App t a))
---     , AppScalar (AppScalar t) ~ AppScalar t
       )
 
 ----------------------------------------
@@ -278,13 +233,27 @@ class FAlgebra (alg::Type->Constraint) where
 
 --------------------
 
+class (Topology a, Variety alg) => Approximate alg a where
+    approximation :: Proxy alg -> Proxy a -> String -> Logic a
+
+-- instance {-#OVERLAPPABLE#-} (Topology a, Variety alg) => Approximate alg a where
+--     approximation _ _ _ = minBound
+
+--------------------
+
 class FAlgebra alg => Variety alg where
     laws :: [Law alg]
 
 newtype Var = Var String
 
--- type instance Scalar Var = ()
--- type instance Logic Var = ()
+-- FIXME:
+-- We don't want to have to define instance of these classes in order to define the family instances.
+instance Poset Var
+instance Topology Var where
+    type Logic Var = Var
+instance Semigroup Var
+instance Module Var where
+    type Scalar Var = Var
 
 instance Show Var where
     show (Var x) = x
@@ -297,6 +266,9 @@ var2 = Pure $ Var "var2"
 
 var3 :: Free (Sig f) '[] Var
 var3 = Pure $ Var "var3"
+
+var4 :: Free (Sig f) '[ 'Scalar ] Var
+var4 = Pure $ Var "var4"
 
 data Law (alg::Type->Constraint) = forall t. Law
     { lawName :: String
@@ -382,6 +354,18 @@ instance FAlgebra Poset where
     mape f (Si e1 e2) = Si (f e1) (f e2)
 
 --------------------
+
+-- NOTE:
+-- We could create a single View class (as shown below) to replace the View* classes we're creating for each FAlgebra.
+-- This reduces the number of classes we have to create at the expense of requiring manual annotation of some type signatures.
+-- The user would never have to manually add these type signatures, so it's probably the right tradeoff.
+-- But it makes explaining the plumbing just a bit more wonky.
+
+-- class (FAlgebra alg1, FAlgebra alg2, Prereq alg1 t1 alg2 t2) => ViewAll alg1 t1 alg2 t2 where
+--     type Prereq alg1 t1 alg2 t2 :: Constraint
+--     type Prereq alg1 t1 alg2 t2 = ()
+--     toSig1   :: Sig alg2 t2 a -> Sig alg1 t1 a
+--     fromSig1 :: Sig alg1 t1 a -> Sig alg2 t2 a
 
 class FAlgebra alg => ViewPoset alg t where
     fromSigPoset :: Sig Poset '[] (      a) -> Sig alg    t         a
