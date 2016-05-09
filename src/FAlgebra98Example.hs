@@ -5,6 +5,9 @@ module FAlgebra98Example
     where
 
 import Prelude hiding (Monoid (..),(-),(+),negate)
+import Data.Foldable
+import Data.Typeable
+import Data.Proxy
 import qualified Prelude as P
 import GHC.Exts
 
@@ -33,6 +36,9 @@ instance Semigroup Int where (+) = (P.+)
 --
 -- instance Prelude.Functor (Sig98 Semigroup) where
 --     fmap f (Sig98_plus a1 a2) = Sig98_plus (f a1) (f a2)
+
+-- instance Foldable (Sig98 Semigroup) where
+--     foldr f b (Sig98_plus a1 a2) = f a2 (f a1 b)
 
 -- instance Show a => Show (Sig98 Semigroup a) where
 --     show (Sig98_plus a1 a2) = show a1++"+"++show a2
