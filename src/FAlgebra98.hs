@@ -35,6 +35,7 @@ module FAlgebra98
     , printLaw
 
     -- ** Evaluating laws
+    , Testable98
     , runTests
     , runAllTests
 
@@ -53,6 +54,8 @@ import GHC.Exts hiding (IsList(..))
 
 import Test.Tasty
 import Test.Tasty.Ingredients.Basic
+import Test.Tasty.Options
+import Test.Tasty.Runners
 import qualified Test.Tasty.SmallCheck as SC
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable)
@@ -273,8 +276,8 @@ law2quickcheck :: forall (a :: *) alg.
     ( FAlgebra98 alg
     , alg a
     , Testable98 a
-    ) => Proxy a -> Law alg -> Gen Bool
-law2quickcheck p law = do
+    ) => Proxy a -> Law alg -> TestTree
+law2quickcheck p law = QC.testProperty (name law) $ do
     as <- infiniteListOf (arbitrary::Gen a)
     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
     return $ (eval98 $ subVars (lhs law) varmap)
@@ -287,11 +290,7 @@ class2tasty :: forall alg a.
     ) => Proxy alg -> Proxy a -> TestTree
 class2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " on " ++ show (typeRep pa) )
-    [ QC.testProperty
-        ( name law )
-        ( law2quickcheck pa law )
-    | law <- (laws :: [Law alg])
-    ]
+    $ map (law2quickcheck pa) (laws::[Law alg])
 
 superclasses2tasty :: forall alg a.
     ( Variety98 alg
@@ -301,13 +300,7 @@ superclasses2tasty :: forall alg a.
 superclasses2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " (and superclasses) on " ++ show (typeRep pa) )
     $
-    [ testGroup
-        (show t)
-        [ QC.testProperty
-            ( name law )
-            ( law2quickcheck pa law )
-        | law <- laws
-        ]
+    [ testGroup (show t) $ map (law2quickcheck pa) (laws::[Law alg])
     | (t,laws) <- allLaws @alg
     ]
     ++
@@ -319,14 +312,21 @@ runTests :: forall alg a.
     , alg a
     , Testable98 a
     ) => IO ()
-runTests = defaultMain (class2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
+runTests = runTasty (class2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
 
 runAllTests :: forall alg a.
     ( Variety98 alg
     , alg a
     , Testable98 a
     ) => IO ()
-runAllTests = defaultMain (superclasses2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
+runAllTests = runTasty (superclasses2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
+
+runTasty :: TestTree -> IO ()
+runTasty tt = do
+    case tryIngredients [consoleTestReporter] (singleOption (HideSuccesses True)) tt of
+        Just x -> x
+    return ()
+
 
 --------------------------------------------------------------------------------
 -- template haskell functions
