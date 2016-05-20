@@ -2,6 +2,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE NoRebindableSyntax #-}
+{-# LANGUAGE TypeInType #-}
 
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
@@ -22,6 +23,17 @@ module FAlgebra98
     , Variety98 (..)
     , Law (..)
     , allLaws
+    , subVars
+
+    -- ** Common laws
+    , Op0
+    , Op1
+    , Op2
+    , commutative
+    , associative
+    , idempotent
+    , identity_left
+    , identity_right
 
     -- ** Variables for generating laws
     , Var
@@ -41,7 +53,6 @@ module FAlgebra98
 
     , class2tasty
     , superclasses2tasty
-
     )
     where
 
@@ -50,6 +61,8 @@ import Control.Monad
 import Data.List
 import Data.Foldable
 import Data.Typeable
+
+import Data.Kind
 import GHC.Exts hiding (IsList(..))
 
 import Test.Tasty
@@ -60,13 +73,15 @@ import qualified Test.Tasty.SmallCheck as SC
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable)
 
-import Language.Haskell.TH
+import TemplateHaskellUtils
+import Language.Haskell.TH hiding (Type)
+import qualified Language.Haskell.TH as TH
 
 import Debug.Trace
 
 --------------------------------------------------------------------------------
 
-class (alg1 a, alg2 a) => And (alg1 :: * -> Constraint) (alg2 :: * -> Constraint) (a:: *)
+class (alg1 a, alg2 a) => And (alg1 :: Type -> Constraint) (alg2 :: Type -> Constraint) (a:: Type)
 instance (alg1 a, alg2 a) => And alg1 alg2 a
 
 instance (FAlgebra98 alg1, FAlgebra98 alg2) => FAlgebra98 (And alg1 alg2) where
@@ -114,9 +129,9 @@ class
     ( Functor (Sig98 alg)
     , Foldable (Sig98 alg)
     , Typeable alg
-    ) => FAlgebra98 (alg :: * -> Constraint)
+    ) => FAlgebra98 (alg :: Type -> Constraint)
         where
-    type ParentClasses alg :: [* -> Constraint]
+    type ParentClasses alg :: [Type -> Constraint]
     data Sig98 alg a
     runSig98 :: alg a => Sig98 alg a -> a
 
@@ -124,7 +139,7 @@ class
 
 type AncestorClasses alg = Nub (AncestorClasses_ (ParentClasses alg))
 
-type family AncestorClasses_ (xs::[* -> Constraint]) :: [* -> Constraint] where
+type family AncestorClasses_ (xs::[Type -> Constraint]) :: [Type -> Constraint] where
     AncestorClasses_ (x ': xs) = x ': (AncestorClasses_ (ParentClasses x) ++ AncestorClasses_ xs)
     AncestorClasses_ '[] = '[]
 
@@ -145,7 +160,7 @@ type family Remove x xs where
 
 ----------------------------------------
 
-data Free98 (f :: * -> *) (a :: *) where
+data Free98 (f :: Type -> Type) (a :: Type) where
     Free98 :: f (Free98 f a) -> Free98 f a
     Pure98 :: a -> Free98 f a
 
@@ -161,7 +176,7 @@ instance (Functor f, Foldable f) => Foldable (Free98 f) where
     foldMap f (Free98 fa) = fold $ fmap (foldMap f) fa
     foldMap f (Pure98  a) = f a
 
-type Expr98 (alg :: * -> Constraint) a = Free98 (Sig98 alg) a
+type Expr98 (alg :: Type -> Constraint) a = Free98 (Sig98 alg) a
 
 eval98 :: (FAlgebra98 alg, alg a) => Expr98 alg a -> a
 eval98 (Pure98 a) = a
@@ -191,7 +206,7 @@ embedLaws = map embedLaw
 ----------------------------------------
 
 data Law alg = Law
-    { name :: String
+    { lawName :: String
     , lhs :: Expr98 alg Var
     , rhs :: Expr98 alg Var
     }
@@ -213,10 +228,53 @@ var2 = Pure98 $ Var "var2"
 var3 :: Expr98 alg Var
 var3 = Pure98 $ Var "var3"
 
+--------------------
+
+type Op0 alg = Expr98 alg Var
+type Op1 alg = Expr98 alg Var -> Expr98 alg Var
+type Op2 alg = Expr98 alg Var -> Expr98 alg Var -> Expr98 alg Var
+
+commutative :: Op2 alg -> Law alg
+commutative f = Law
+    { lawName = "commutative"
+    , lhs = f var1 var2
+    , rhs = f var2 var1
+    }
+
+associative :: Op2 alg -> Law alg
+associative f = Law
+    { lawName = "associative"
+    , lhs = (var1 `f`  var2) `f` var3
+    , rhs =  var1 `f` (var2  `f` var3)
+    }
+
+idempotent :: Op2 alg -> Law alg
+idempotent f = Law
+    { lawName = "idempotent"
+    , lhs = f var1 var1
+    , rhs = var1
+    }
+
+identity_left :: Op0 alg -> Op2 alg -> Law alg
+identity_left f0 f2 = Law
+    { lawName = "identity_left"
+    , lhs = f2 f0 var1
+    , rhs = var1
+    }
+
+identity_right :: Op0 alg -> Op2 alg -> Law alg
+identity_right f0 f2 = Law
+    { lawName = "identity_right"
+    , lhs = f2 var1 f0
+    , rhs = var1
+    }
+
+--------------------
+
 class (FAlgebra98 alg, ListLaws alg (AncestorClasses alg)) => Variety98 alg where
     laws :: [Law alg]
 
-class Variety98 alg => ListLaws alg (xs::[* -> Constraint]) where
+class Variety98 alg => ListLaws alg (xs::[Type -> Constraint]) where
     listLaws :: Proxy xs -> [(TypeRep,[Law alg])]
 
 instance Variety98 alg => ListLaws alg '[] where
@@ -247,6 +305,9 @@ printAllLaws = do
         putStrLn $ show t
         forM laws $ \law -> do
             printLaw law
+
+    putStrLn $ show $ typeRep (Proxy::Proxy alg)
+    printLaws (Proxy::Proxy alg)
     putStrLn ""
 
 printLaws :: forall alg.
@@ -258,7 +319,7 @@ printLaws palg = do
 
 printLaw :: Show (Expr98 alg Var) => Law alg -> IO ()
 printLaw law = do
-    putStrLn $ "  "++name law++":"
+    putStrLn $ "  "++lawName law++":"
     putStrLn $ "    lhs: "++show (lhs law)
     putStrLn $ "    rhs: "++show (rhs law)
 
@@ -272,12 +333,12 @@ subVars expr varmap = fmap go expr
         go var = case lookup var varmap of
             Just a -> a
 
-law2quickcheck :: forall (a :: *) alg.
+law2quickcheck :: forall (a :: Type) alg.
     ( FAlgebra98 alg
     , alg a
     , Testable98 a
     ) => Proxy a -> Law alg -> TestTree
-law2quickcheck p law = QC.testProperty (name law) $ do
+law2quickcheck p law = QC.testProperty (lawName law) $ do
     as <- infiniteListOf (arbitrary::Gen a)
     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
     return $ (eval98 $ subVars (lhs law) varmap)
@@ -752,82 +813,4 @@ mkFAlgebra98 algName = do
 
 --------------------------------------------------------------------------------
 -- utility functions
-
-renameClassMethod :: Name -> String
-renameClassMethod n = concatMap go $ nameBase n
-    where
-        go '+' = "plus"
-        go '-' = "minus"
-        go '.' = "dot"
-        go '*' = "mul"
-        go x   = [x]
-
-isOperator :: String -> Bool
-isOperator str = not $ length str == length (renameClassMethod $ mkName $ str)
-
--- | Given a type that stores a function:
--- return a list of the arguments to that function,
--- and discard the return value.
-getArgs :: Type -> [Type]
-getArgs (AppT (AppT ArrowT t1) t2) = t1:getArgs t2
-getArgs t = []
-
--- | Given a type with a single bound variable,
--- substitute all occurances of that variable with a different variable.
-subForall :: Name -> Type -> Type
-subForall n (ForallT [v] _ t) = go t
-    where
-        go (AppT t1 t2) = AppT (go t1) (go t2)
-        go (VarT _) = VarT n
-        go t = t
-
--- | Given a list of arguments passed to a function, return a list of patterns;
--- the inputs must be all type variables, otherwise an error will be thrown;
--- the Name parameter is only used for better error messages;
--- the output patterns will contain variables e1,e2,...eN where N is the length of the input
-args2pat :: Name -> [Type] -> [Pat]
-args2pat sigName xs = go 0 xs
-    where
-        go i [] = []
-        go i (VarT n:xs) = (VarP $ mkName $ nameBase n ++ show i):go (i+1) xs
-        go i (x:xs) = error $ "function "++nameBase sigName++" has unsupported argument type "++show (ppr x)
-
--- | Given a class name, find all the superclasses
-listSuperClasses :: Name -> Q [Name]
-listSuperClasses algName = do
-    qinfo <- reify algName
-    cxt <- case qinfo of
-        ClassI (ClassD cxt _ _ _ _) _ -> return cxt
-        _ -> error $ "listSuperClasses called on "++show algName++", which is not a class"
-    ret <- forM cxt $ \pred -> case pred of
-        (AppT (ConT c) (VarT v)) -> do
-            ret <- listSuperClasses c
-            return $ c:ret
-        _  -> error $ "listSuperClasses, super class is too complicated: "++show pred
-    return $ nub $ concat ret
-
--- | Fiven a class name, find all the superclasses that are not also parents;
--- for each superclass, record the parent class that gives rise to the superclass;
--- if there are multiple ways to reach the superclass,
--- then an arbitrary parent will be selected
-listSuperClassesWithParents :: Name -> Q [(Name,Name)]
-listSuperClassesWithParents algName = do
-    parentClasses <- listParentClasses algName
-    superClassesWithParents <- fmap concat $ forM parentClasses $ \parentClass -> do
-        superClasses <- listSuperClasses parentClass
-        return $ map (parentClass,) superClasses
-    return $ nubBy (\(_,a1) (_,a2) -> a1==a2) superClassesWithParents
-
--- | Given a class name, find all the parent classes
-listParentClasses :: Name -> Q [Name]
-listParentClasses algName = do
-    qinfo <- reify algName
-    cxt <- case qinfo of
-        ClassI (ClassD cxt _ _ _ _) _ -> return cxt
-        _ -> error $ "listSuperClasses called on "++show algName++", which is not a class"
-    ret <- forM cxt $ \pred -> case pred of
-        (AppT (ConT c) (VarT v)) -> do
-            return $ [c]
-        _  -> error $ "listSuperClasses, super class is too complicated: "++show pred
-    return $ nub $ concat ret
 

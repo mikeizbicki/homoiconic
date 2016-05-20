@@ -4,14 +4,18 @@
 module FAlgebra98Example
     where
 
-import Prelude hiding (Monoid (..),(-),(+),negate)
+import Prelude hiding (Monoid (..),(-),(+),negate,(==))
 import Data.Foldable
+import Data.List
 import Data.Typeable
 import Data.Proxy
 import qualified Prelude as P
-import GHC.Exts
+-- import GHC.Exts
 
 import FAlgebra98
+import Spatial98
+import Topology
+import Lattice
 
 --------------------------------------------------------------------------------
 
@@ -22,12 +26,21 @@ mkFAlgebra98 ''Semigroup
 
 instance Variety98 Semigroup where
     laws = [ Law
-        { name = "associative"
+        { lawName = "associative"
         , lhs = (var1+var2)+var3
         , rhs = var1+(var2+var3)
         } ]
 
 instance Semigroup Int where (+) = (P.+)
+instance Semigroup Float where (+) = (P.+)
+
+instance Approximate98 Semigroup Float where
+    epsLaws =
+        [ EpsLaw
+            { epsLawName = "associative"
+            , epsilon = lowerBound
+            }
+        ]
 
 -- instance FAlgebra98 Semigroup where
 --     data Sig98 Semigroup a where
@@ -65,18 +78,19 @@ mkFAlgebra98 ''Monoid
 instance Variety98 Monoid where
     laws =
         [ Law
-            { name = "identity-left"
+            { lawName = "identity-left"
             , lhs = zero+var1
             , rhs = var1
             }
         , Law
-            { name = "identity-right"
+            { lawName = "identity-right"
             , lhs = var1+zero
             , rhs = var1
             }
         ]
 
 instance Monoid Int where zero = 0
+instance Monoid Float where zero = 0
 
 -- instance FAlgebra98 Monoid where
 --     data Sig98 Monoid a where
@@ -110,18 +124,19 @@ mkFAlgebra98 ''Cancellative
 instance Variety98 Cancellative where
     laws =
         [ Law
-            { name = "cancellation-right"
+            { lawName = "cancellation-right"
             , lhs = var1+var2-var2
             , rhs = var1
             }
         , Law
-            { name = "cancellation-left"
+            { lawName = "cancellation-left"
             , lhs = var1+var2-var1
             , rhs = var2
             }
         ]
 
 instance Cancellative Int where (-) = (P.-)
+instance Cancellative Float where (-) = (P.-)
 
 --------------------
 
@@ -134,23 +149,24 @@ mkFAlgebra98 ''Group
 instance Variety98 Group where
     laws =
         [ Law
-            { name = "defn-negate"
+            { lawName = "defn-negate"
             , lhs = negate var1
             , rhs = zero - var1
             }
         , Law
-            { name = "inverse-left"
+            { lawName = "inverse-left"
             , lhs = negate var1 + var1
             , rhs = zero
             }
         , Law
-            { name = "inverse-right"
+            { lawName = "inverse-right"
             , lhs = var1 + negate var1
             , rhs = zero
             }
         ]
 
 instance Group Int where negate = P.negate
+instance Group Float where negate = P.negate
 
 -- instance View98 Semigroup Group where
 --     embedSig s = Sig98_Group_Monoid (embedSig s)
