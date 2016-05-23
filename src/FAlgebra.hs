@@ -11,8 +11,9 @@ module FAlgebra
 
 import Prelude
 import Control.Monad
-import Data.List
 import Data.Foldable
+import Data.List
+import Data.Maybe
 import Data.Typeable
 
 import Data.Kind
@@ -288,33 +289,138 @@ mkFAlgebra algName = do
                     | AppT (ConT predClass) predType <- cxt
                     ]
                 )
---             , FunD
---                 ( mkName "runSig" )
---                 (
---                     -- evaluate functions
---                     [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
---                       in Clause
---                         [ ConP ( mkName $ "Sig_" ++ renameClassMethod sigName ) args
---                         ]
---                         ( NormalB $ foldl AppE (VarE sigName) $ map (\(VarP n)->VarE n) args )
---                         []
---                         | SigD sigName sigType <- decs
---                     ]
---                     ++
---                     -- evaluate nested constructors
---                     [ Clause
---                         [ ConP
---                             ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
---                             [ VarP $ mkName $ "s" ]
---                         ]
---                         ( NormalB $ AppE
---                             ( VarE $ mkName "runSig" )
---                             ( VarE $ mkName "s" )
---                         )
---                         []
---                         | parentClass <- parentClasses
---                     ]
---                 )
+            , FunD
+                ( mkName "runSigTag" )
+                (
+                    -- evaluate functions
+                    ( catMaybes [ case getReturnType sigType of
+                        (VarT _) -> Nothing
+                        _ -> Just $ Clause
+                            [ SigP
+                                ( VarP $ mkName "p" )
+                                ( AppT
+                                    ( VarT $ mkName "proxy" )
+                                    ( VarT $ mkName "r" )
+                                )
+                            , ConP
+                                ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                ( map VarP ( genericArgs sigType ) )
+                            ]
+                            ( NormalB $ foldl AppE (VarE sigName) $ map VarE $ genericArgs sigType )
+                            []
+                    | SigD sigName sigType <- decs
+                    ] )
+                    ++
+                    -- evaluate nested constructors
+                    [ Clause
+                        [ SigP
+                            ( VarP $ mkName "p" )
+                            ( AppT
+                                ( VarT $ mkName "proxy" )
+                                ( VarT varName )
+                            )
+                        , ConP
+                            ( mkName $ "Sig_"++nameBase algName
+                                        ++"_"++nameBase predClass
+                                        ++"_"++predType2str predType
+                            )
+                            [ VarP $ mkName $ "s" ]
+                        ]
+                        ( NormalB $ AppE
+                            ( AppE
+                                ( VarE $ mkName "runSigTag" )
+                                ( case predType of
+                                    (VarT _) -> VarE $ mkName "p"
+                                    _        -> SigE
+                                        ( ConE $ mkName "Proxy" )
+                                        ( AppT
+                                            ( ConT $ mkName "Proxy" )
+                                            ( subAllVars varName predType )
+                                        )
+                                )
+                            )
+                            ( VarE $ mkName "s" )
+                        )
+                        []
+                        | AppT (ConT predClass) predType <- cxt
+                    ]
+                    ++
+                    -- catch all error message
+                    [ Clause
+                        [ VarP $ mkName "p", VarP $ mkName "s" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "runSigTag ("++nameBase algName++"): this should never happen" )
+                        )
+                        []
+                    ]
+                )
+            , FunD
+                ( mkName "runSig" )
+                (
+                    -- evaluate functions
+                    ( catMaybes [ case getReturnType sigType of
+                        (VarT _) -> Just $ Clause
+                            [ SigP
+                                ( VarP $ mkName "p" )
+                                ( AppT
+                                    ( VarT $ mkName "proxy" )
+                                    ( VarT $ mkName "r" )
+                                )
+                            , ConP
+                                ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                ( map VarP ( genericArgs sigType ) )
+                            ]
+                            ( NormalB $ foldl AppE (VarE sigName) $ map VarE $ genericArgs sigType )
+                            []
+                        _ -> Nothing
+                    | SigD sigName sigType <- decs
+                    ] )
+                    ++
+                    -- evaluate nested constructors
+                    [ Clause
+                        [ SigP
+                            ( VarP $ mkName "p" )
+                            ( AppT
+                                ( VarT $ mkName "proxy" )
+                                ( VarT varName )
+                            )
+                        , ConP
+                            ( mkName $ "Sig_"++nameBase algName
+                                        ++"_"++nameBase predClass
+                                        ++"_"++predType2str predType
+                            )
+                            [ VarP $ mkName $ "s" ]
+                        ]
+                        ( NormalB $ AppE
+                            ( AppE
+                                ( VarE $ mkName "runSig" )
+                                ( case predType of
+                                    (VarT _) -> VarE $ mkName "p"
+                                    _        -> SigE
+                                        ( ConE $ mkName "Proxy" )
+                                        ( AppT
+                                            ( ConT $ mkName "Proxy" )
+                                            ( subAllVars varName predType )
+                                        )
+                                )
+                            )
+                            ( VarE $ mkName "s" )
+                        )
+                        []
+                        | AppT (ConT predClass) predType <- cxt
+                    ]
+                    ++
+                    -- catch all error message
+                    [ Clause
+                        [ VarP $ mkName "p", VarP $ mkName "s" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "runSig ("++nameBase algName++"): this should never happen" )
+                        )
+                        []
+                    ]
+                )
 
 --             , TySynInstD
 --                 ( mkName $ "ParentClasses" )
@@ -641,8 +747,6 @@ mkFAlgebra algName = do
                         )
                         ( predType2tagType PromotedNilT predType )
                     )
-                    ( trace ("algName="++show algName++"; predClass="++show predClass++"; parentClass="++show parentClass++"; parentType="++show parentType) $
---                     [
                     [ FunD
                         ( mkName "embedSig" )
                         [ Clause
@@ -659,74 +763,29 @@ mkFAlgebra algName = do
                             )
                             []
                         ]
---                     , FunD
---                         ( mkName "unsafeExtractSig" )
---                         [ Clause
---                             [ ConP
---                                 ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
---                                 [ VarP $ mkName "s" ]
---                             ]
---                             ( NormalB $ AppE
---                                 ( VarE $ mkName "unsafeExtractSig" )
---                                 ( VarE $ mkName "s" )
---                             )
---                             []
---                         ]
-                    ])
+                    , FunD
+                        ( mkName "unsafeExtractSig" )
+                        [ Clause
+                            [ ConP
+                                ( mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase parentClass
+                                            ++"_"++predType2str parentType
+                                )
+                                [ VarP $ mkName "s" ]
+                            ]
+                            ( NormalB $ AppE
+                                ( VarE $ mkName "unsafeExtractSig" )
+                                ( VarE $ mkName "s" )
+                            )
+                            []
+                        ]
+                    ]
             | PredInfo
                 (AppT (ConT predClass) predType)
                 _
                 (Just parent@(AppT (ConT parentClass) parentType))
                 <- allcxt
             ]
-
-            -- parent classes are stored directly in the Sig type
---             [ InstanceD
---                 Nothing
---                 []
---                 ( AppT
---                     ( AppT
---                         ( AppT
---                             ( AppT
---                                 ( ConT $ mkName "View" )
---                                 ( ConT predClass )
---                             )
---                             PromotedNilT
---                         )
---                         ( ConT algName )
---                     )
---                     ( predType2tagType PromotedNilT predType )
---                 )
---                 [ FunD
---                     ( mkName "embedSig" )
---                     [ Clause
---                         []
---                         ( NormalB $ ConE
---                             $ mkName $ "Sig_"++nameBase algName
---                                         ++"_"++nameBase predClass
---                                         ++"_"++predType2str predType
---                         )
---                         []
---                     ]
---                 , FunD
---                     ( mkName "unsafeExtractSig" )
---                     [ Clause
---                         [ ConP
---                             ( mkName $ "Sig_"++nameBase algName
---                                         ++"_"++nameBase predClass
---                                         ++"_"++predType2str predType
---                             )
---                             [ VarP $ mkName "s" ]
---                         ]
---                         ( NormalB $ VarE $ mkName "s" )
---                         []
---                     ]
---                 ]
---             | AppT (ConT predClass) predType <- cxt
---             ]
-
-            -- FIXME:
-            -- need to add instances for non-parent predicates
 
     return $ ats ++ instViews ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
@@ -741,6 +800,13 @@ predType2tagType s t = foldr (\a b -> AppT (AppT PromotedConsT a) b) s $ go t
         go (AppT a1 a2) = go a1 ++ go a2
         go (ConT t) = [ConT $ mkName $ "T"++nameBase t]
         go _ = []
+
+subAllVars :: Name -> TH.Type -> TH.Type
+subAllVars varName = go
+    where
+        go (VarT _) = VarT varName
+        go (AppT t1 t2) = AppT (go t1) (go t2)
+        go t = t
 
 -- | Stores all the information we'll need about a predicate
 data PredInfo = PredInfo

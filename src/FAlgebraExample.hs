@@ -25,6 +25,8 @@ class Semigroup a where
 
 mkFAlgebra ''Semigroup
 
+instance Semigroup Int where (+) = (P.+)
+
 -- pattern Expr_plus ::
 --     ( View Semigroup '[] alg t
 --     , TypeConstraints t a
@@ -43,6 +45,8 @@ class Semigroup a => Monoid a where
 
 mkFAlgebra ''Monoid
 
+instance Monoid Int where zero = 0
+
 type family Scalar a
 mkAT ''Scalar
 
@@ -50,8 +54,8 @@ type instance Scalar Int = Int
 type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) (TScalar ': t) a
 
 -- class (Semigroup a, Monoid a, Semigroup (Scalar a), Monoid (Scalar a)) => Module a where
-class (Monoid a, Monoid (Scalar a)) => Module a where
--- class Monoid a => Module a where
+-- class (Monoid a, Monoid (Scalar a)) => Module a where
+class Monoid a => Module a where
     (.*) :: Scalar a -> a -> a
 
 -- instance FAlgebra Module where
@@ -62,17 +66,18 @@ class (Monoid a, Monoid (Scalar a)) => Module a where
 
 mkFAlgebra ''Module
 
+instance Module Int where (.*) = (P.*)
+
 type family Foo a
 mkAT ''Foo
 type instance Foo (Free (Sig alg) t a) = Free (Sig alg) (TFoo ': t) a
 
--- class (Semigroup a, Monoid a, Semigroup (Scalar a), Monoid (Scalar a), Module a) => Hilbert a where
 class Module a => Hilbert a where
---     aaa :: a -> a -> a
     (<>) :: a -> a -> Scalar a
---     asd :: a -> Foo a
 
 mkFAlgebra ''Hilbert
+
+instance Hilbert Int where (<>) = (P.*)
 
 class Hilbert a => Floobert a where
     floo :: a -> a
