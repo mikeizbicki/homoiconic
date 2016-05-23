@@ -154,7 +154,8 @@ mkFAlgebra algName = do
     -- common variables we'll need later
     let varName = mkName "a"
         tagName = mkName "t"
-    allcxt <- superPredicates (AppT (ConT algName) (VarT tagName))
+        thisPred = AppT (ConT algName) (VarT tagName)
+    allcxt <- superPredicates thisPred
 
     -- construct associated types
     -- FIXME:
@@ -200,7 +201,7 @@ mkFAlgebra algName = do
                             ( ConT $ mkName "Sig" )
                             ( ConT predClass )
                         )
-                        PromotedNilT
+                        ( VarT tagName )
                     )
                     ( VarT varName )
                   )
@@ -211,7 +212,7 @@ mkFAlgebra algName = do
                             ( ConT $ mkName "Sig" )
                             ( ConT $ algName )
                         )
-                        ( predType2tagType PromotedNilT predType )
+                        ( predType2tagType (VarT tagName) predType )
                     )
                     ( VarT varName )
                 )
@@ -469,20 +470,32 @@ mkFAlgebra algName = do
     let algName' = mkName "alg'"
     let instFree = InstanceD
             Nothing
-            [ AppT
-                ( AppT
-                    ( AppT
+            ( nub $ concat $
+                [   [ AppT
                         ( AppT
-                            ( ConT $ mkName "View" )
-                            ( ConT predClass )
+                            ( AppT
+                                ( AppT
+                                    ( ConT $ mkName "View" )
+                                    ( ConT predClass )
+                                )
+--                                 PromotedNilT
+                                ( predType2tagType PromotedNilT $ getReturnType sigType )
+                            )
+                            ( VarT algName' )
                         )
-                        PromotedNilT
-                    )
-                    ( VarT algName' )
-                )
-                ( predType2tagType (VarT tagName) predType )
-                | AppT (ConT predClass) predType <- allcxt
-            ]
+                        ( predType2tagType
+                            ( predType2tagType (VarT tagName) predType )
+                            ( getReturnType sigType )
+                        )
+                    | SigD _ sigType <- decs
+                    ]
+                | PredInfo
+                    (AppT (ConT predClass) predType)
+                    (ClassI (ClassD _ _ _ _ decs) _)
+                    _
+                    <- allcxt
+                ]
+            )
             ( AppT
                 ( ConT algName )
                 ( AppT
@@ -568,51 +581,149 @@ mkFAlgebra algName = do
 
     -- construct the `View alg alg'` instances
     let instViews =
+            [ if parent == thisPred
 
-            -- parent classes are stored directly in the Sig type
-            [ InstanceD
-                Nothing
-                []
-                ( AppT
+                -- parent classes are stored directly in the Sig type
+                then InstanceD
+                    Nothing
+                    []
                     ( AppT
                         ( AppT
                             ( AppT
-                                ( ConT $ mkName "View" )
-                                ( ConT predClass )
+                                ( AppT
+                                    ( ConT $ mkName "View" )
+                                    ( ConT predClass )
+                                )
+                                PromotedNilT
                             )
-                            PromotedNilT
+                            ( ConT algName )
                         )
-                        ( ConT algName )
+                        ( predType2tagType PromotedNilT predType )
                     )
-                    ( predType2tagType PromotedNilT predType )
-                )
-                [ FunD
-                    ( mkName "embedSig" )
-                    [ Clause
-                        []
-                        ( NormalB $ ConE
-                            $ mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
-                                        ++"_"++predType2str predType
-                        )
-                        []
-                    ]
-                , FunD
-                    ( mkName "unsafeExtractSig" )
-                    [ Clause
-                        [ ConP
-                            ( mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
-                                        ++"_"++predType2str predType
+                    [ FunD
+                        ( mkName "embedSig" )
+                        [ Clause
+                            []
+                            ( NormalB $ ConE
+                                $ mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase predClass
+                                            ++"_"++predType2str predType
                             )
-                            [ VarP $ mkName "s" ]
+                            []
                         ]
-                        ( NormalB $ VarE $ mkName "s" )
-                        []
+                    , FunD
+                        ( mkName "unsafeExtractSig" )
+                        [ Clause
+                            [ ConP
+                                ( mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase predClass
+                                            ++"_"++predType2str predType
+                                )
+                                [ VarP $ mkName "s" ]
+                            ]
+                            ( NormalB $ VarE $ mkName "s" )
+                            []
+                        ]
                     ]
-                ]
-            | AppT (ConT predClass) predType <- cxt
+                else InstanceD
+                    Nothing
+                    []
+                    ( AppT
+                        ( AppT
+                            ( AppT
+                                ( AppT
+                                    ( ConT $ mkName "View" )
+                                    ( ConT predClass )
+                                )
+                                PromotedNilT
+                            )
+                            ( ConT algName )
+                        )
+                        ( predType2tagType PromotedNilT predType )
+                    )
+                    ( trace ("algName="++show algName++"; predClass="++show predClass++"; parentClass="++show parentClass++"; parentType="++show parentType) $
+--                     [
+                    [ FunD
+                        ( mkName "embedSig" )
+                        [ Clause
+                            [ VarP $ mkName "s" ]
+                            ( NormalB $ AppE
+                                ( ConE $ mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase parentClass
+                                            ++"_"++predType2str parentType
+                                )
+                                ( AppE
+                                    ( VarE $ mkName "embedSig" )
+                                    ( VarE $ mkName "s" )
+                                )
+                            )
+                            []
+                        ]
+--                     , FunD
+--                         ( mkName "unsafeExtractSig" )
+--                         [ Clause
+--                             [ ConP
+--                                 ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+--                                 [ VarP $ mkName "s" ]
+--                             ]
+--                             ( NormalB $ AppE
+--                                 ( VarE $ mkName "unsafeExtractSig" )
+--                                 ( VarE $ mkName "s" )
+--                             )
+--                             []
+--                         ]
+                    ])
+            | PredInfo
+                (AppT (ConT predClass) predType)
+                _
+                (Just parent@(AppT (ConT parentClass) parentType))
+                <- allcxt
             ]
+
+            -- parent classes are stored directly in the Sig type
+--             [ InstanceD
+--                 Nothing
+--                 []
+--                 ( AppT
+--                     ( AppT
+--                         ( AppT
+--                             ( AppT
+--                                 ( ConT $ mkName "View" )
+--                                 ( ConT predClass )
+--                             )
+--                             PromotedNilT
+--                         )
+--                         ( ConT algName )
+--                     )
+--                     ( predType2tagType PromotedNilT predType )
+--                 )
+--                 [ FunD
+--                     ( mkName "embedSig" )
+--                     [ Clause
+--                         []
+--                         ( NormalB $ ConE
+--                             $ mkName $ "Sig_"++nameBase algName
+--                                         ++"_"++nameBase predClass
+--                                         ++"_"++predType2str predType
+--                         )
+--                         []
+--                     ]
+--                 , FunD
+--                     ( mkName "unsafeExtractSig" )
+--                     [ Clause
+--                         [ ConP
+--                             ( mkName $ "Sig_"++nameBase algName
+--                                         ++"_"++nameBase predClass
+--                                         ++"_"++predType2str predType
+--                             )
+--                             [ VarP $ mkName "s" ]
+--                         ]
+--                         ( NormalB $ VarE $ mkName "s" )
+--                         []
+--                     ]
+--                 ]
+--             | AppT (ConT predClass) predType <- cxt
+--             ]
 
             -- FIXME:
             -- need to add instances for non-parent predicates
@@ -631,27 +742,48 @@ predType2tagType s t = foldr (\a b -> AppT (AppT PromotedConsT a) b) s $ go t
         go (ConT t) = [ConT $ mkName $ "T"++nameBase t]
         go _ = []
 
+-- | Stores all the information we'll need about a predicate
+data PredInfo = PredInfo
+    { predSig    :: Pred
+    , predReify  :: Info
+    , predHost   :: Maybe Pred
+    }
+    deriving (Eq)
+
 -- | Given a predicate that represents a class/tag combination,
 -- recursively list all super predicates
-superPredicates :: Pred -> Q [Pred]
-superPredicates = go []
+superPredicates :: Pred -> Q [PredInfo]
+superPredicates rootPred@(AppT (ConT predClass) _) = do
+    qinfo <- reify predClass
+    go [] $ PredInfo rootPred qinfo Nothing
     where
-        go prevCxt pred@(AppT (ConT predClass) predType) = do
+
+        go :: [PredInfo] -> PredInfo -> Q [PredInfo]
+        go prevCxt predInfo = do
+            let pred@(AppT (ConT predClass) predType) = predSig predInfo
             qinfo <- reify predClass
             cxt <- case qinfo of
                 ClassI (ClassD cxt _ [_] _ _) _ -> return cxt
                 _ -> error $ "superPredicates called on "
                     ++show predClass
                     ++", which is not a class of kind `Type -> Constraint`"
-            newCxt <- mapM superPredicates (filter (`notElem` prevCxt) $ map (subPred predType) cxt)
-            return $ nub $ pred:prevCxt++concat newCxt
---         go prevCxt pred = return $ nub $ pred:prevCxt
+            newCxt <- mapM (go [])
+                $ filter (`notElem` prevCxt)
+                $ map (\sig -> PredInfo sig undefined $ if predHost predInfo==Nothing || predHost predInfo==Just rootPred
+                    then Just pred
+                    else predHost predInfo
+                    )
+                $ map (subPred predType) cxt
+            return
+                $ nub
+                $ predInfo { predReify=qinfo }:prevCxt++concat newCxt
 
-        -- This helper function is what keeps track of the tags we've used so far
+        -- When the go function recurses,
+        -- we need to remember what layer of tags we've already seen.
+        -- This function substitutes those tags into the predicate.
         subPred :: Pred -> Pred -> Pred
         subPred predType' (AppT (ConT predClass) predType) = AppT (ConT predClass) $ go predType
             where
                 go (AppT t1 t2) = AppT t1 $ go t2
                 go (VarT t) = predType'
                 go t = t
---         subPred _ t = t

@@ -51,6 +51,7 @@ type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) (TScalar ': t) a
 
 -- class (Semigroup a, Monoid a, Semigroup (Scalar a), Monoid (Scalar a)) => Module a where
 class (Monoid a, Monoid (Scalar a)) => Module a where
+-- class Monoid a => Module a where
     (.*) :: Scalar a -> a -> a
 
 -- instance FAlgebra Module where
@@ -61,12 +62,18 @@ class (Monoid a, Monoid (Scalar a)) => Module a where
 
 mkFAlgebra ''Module
 
+type family Foo a
+mkAT ''Foo
+type instance Foo (Free (Sig alg) t a) = Free (Sig alg) (TFoo ': t) a
+
+-- class (Semigroup a, Monoid a, Semigroup (Scalar a), Monoid (Scalar a), Module a) => Hilbert a where
 class Module a => Hilbert a where
+--     aaa :: a -> a -> a
     (<>) :: a -> a -> Scalar a
+--     asd :: a -> Foo a
 
 mkFAlgebra ''Hilbert
 
-{-
 class Hilbert a => Floobert a where
     floo :: a -> a
 
@@ -82,14 +89,15 @@ class Topology a where
 
 mkFAlgebra ''Topology
 -- mkAT ''Logic
--}
 
 --------------------------------------------------------------------------------
 
 type instance TypeConstraints t a = ()
 
-x :: Free (Sig Module) '[] Int
+type Space = Hilbert
+
+x :: Free (Sig Space) '[] Int
 x = Pure 1
 
-y :: Free (Sig Module) '[TScalar] Int
+y :: Free (Sig Space) '[TScalar] Int
 y = Pure 2
