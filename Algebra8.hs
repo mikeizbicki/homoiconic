@@ -416,9 +416,10 @@ instance Show a => Show (Sig Poset '[] a) where
 instance FAlgebra Topology where
     data Sig Topology t a where
         ST :: {-#UNPACK#-}!(Sig Poset '[] a) -> Sig Topology '[ 'Logic] a
+--         ST :: {-#UNPACK#-}!(Sig Poset t a) -> Sig Topology ('Logic ': t) a
         Se :: a -> a -> Sig Topology '[ 'Logic] a
 
-    alg p (ST s) = alg Proxy s
+    alg (p::proxy a) (ST s) = alg (Proxy::Proxy (Logic a)) s
     algTag p (Se a1 a2) = a1==a2
 
     mape f (ST s) = ST $ mape f s
@@ -548,7 +549,7 @@ instance FAlgebra Module where
 
     algTag p            (SM  s) = algTag p s
     algTag (p::proxy a) (SN1 s) = algTag (Proxy::Proxy (Scalar a)) s
---     algTag (p::proxy a) (SN2 s) = algTag (Proxy::Proxy (       a)) s
+--     algTag (p::proxy a) (SN2 s) = algTag (Proxy::Proxy (Scalar a)) s
 
     mape f (SM  s) = SM  $ mape f s
     mape f (SN1 s) = SN1 $ mape f s
