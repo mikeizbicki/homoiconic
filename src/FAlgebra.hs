@@ -80,18 +80,36 @@ sigCoerce
     -> Sig alg t (App  t (App s a))
 sigCoerce _ _ _ = unsafeCoerce
 
-runSigSnoc :: forall proxy alg a t s.
+runSigSnoc :: forall proxy alg a t u.
     ( FAlgebra alg
-    , alg (App s a)
-    ) => Proxy s
---       -> Proxy s
+    , alg (App u a)
+    ) => Proxy u
+--       -> Proxy u
       -> Proxy a
-      -> Sig alg t (App (t `Snoc` s) a)
-      -> App (t `Snoc` s) a
-runSigSnoc ps pa s
-    = appCoerce pt ps pa $ runSig (Proxy::Proxy (App s a)) $ sigCoerce pt ps pa s
+      -> Sig alg t (App (t `Snoc` u) a)
+      -> App (t `Snoc` u) a
+runSigSnoc ps pa u
+    = appCoerce pt ps pa $ runSig (Proxy::Proxy (App u a)) $ sigCoerce pt ps pa u
     where
         pt = Proxy :: Proxy t
+
+type family Init (xs::[a]) where
+    Init (x ': '[]) = '[]
+    Init (x ': xs ) = x ': Init xs
+
+runSigTagSnoc :: forall proxy alg a s ttt t u.
+    ( FAlgebra alg
+    , alg (App u a)
+    ) => Proxy u
+      -> Proxy (s::AT)
+      -> Proxy (t::[AT])
+      -> Proxy a
+      -> Sig alg ttt (App t a)
+      -> App s (App t a)
+runSigTagSnoc pu ps pt pa s
+    = unsafeCoerce $ runSigTag
+        (Proxy::Proxy (App u a))
+        (unsafeCoerce s :: Sig alg (s ': Init t) (App (Init t) (App u a)))
 
 unsafeCoerceSigTag :: proxy t' -> Sig alg t a -> Sig alg t' a
 unsafeCoerceSigTag _ = unsafeCoerce
@@ -255,11 +273,6 @@ mkFAlgebra algName = do
                             ( ConT $ mkName "Sig" )
                             ( ConT predClass )
                         )
---                         ( case predType of
---                             (VarT _) -> VarT tagName
---                             _        -> PromotedNilT
---                         )
---                         PromotedNilT
                         ( VarT tagName )
                     )
                     ( VarT varName )
@@ -280,12 +293,6 @@ mkFAlgebra algName = do
                                 )
                                 ( pred2tagSingleton predType )
                         )
---                         ( case predType of
---                             (VarT _) -> VarT tagName
---                             _        -> predType2tagType PromotedNilT predType
---                         )
---                         ( predType2tagType PromotedNilT predType )
---                         ( predType2tagType (VarT tagName) predType )
                     )
                     ( VarT varName )
                 )
@@ -382,7 +389,7 @@ mkFAlgebra algName = do
                             []
                     | SigD sigName sigType <- decs
                     ] )
-                    ++ {-
+                    ++
                     -- evaluate nested constructors
                     [ Clause
                         [ SigP
@@ -391,32 +398,72 @@ mkFAlgebra algName = do
                                 ( VarT $ mkName "proxy" )
                                 ( VarT varName )
                             )
-                        , ConP
-                            ( mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
-                                        ++"_"++predType2str predType
+                        , SigP
+                            ( ConP
+                                ( mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase predClass
+                                            ++"_"++predType2str predType
+                                )
+                                [ VarP $ mkName $ "s" ]
                             )
-                            [ VarP $ mkName $ "s" ]
-                        ]
-                        ( NormalB $ AppE
-                            ( AppE
-                                ( VarE $ mkName "runSigTag" )
-                                ( case predType of
-                                    (VarT _) -> VarE $ mkName "p"
-                                    _        -> SigE
-                                        ( ConE $ mkName "Proxy" )
+                            ( AppT
+                                ( AppT
+                                    ( AppT
+                                        ( ConT $ mkName "Sig" )
+                                        ( ConT $ algName )
+                                    )
+                                    ( AppT
                                         ( AppT
-                                            ( ConT $ mkName "Proxy" )
-                                            ( subAllVars varName predType )
+                                            PromotedConsT
+                                            ( VarT $ mkName "s" )
                                         )
+                                        ( VarT $ mkName "t" )
+                                    )
+                                )
+                                ( AppT
+                                    ( AppT
+                                        ( ConT $ mkName "App" )
+                                        ( VarT $ mkName "t" )
+                                    )
+                                    ( VarT $ mkName "a" )
                                 )
                             )
-                            ( VarE $ mkName "s" )
+                        ]
+                        ( NormalB $ case predType of
+                            (VarT _) -> AppE
+                                ( AppE
+                                    ( VarE $ mkName "runSigTag" )
+                                    ( case predType of
+                                        (VarT _) -> VarE $ mkName "p"
+                                        _        -> SigE
+                                            ( ConE $ mkName "Proxy" )
+                                            ( AppT
+                                                ( ConT $ mkName "Proxy" )
+                                                ( subAllVars varName predType )
+                                            )
+                                    )
+                                )
+                                ( VarE $ mkName "s" )
+                            _ -> AppE
+                                ( AppE
+                                    ( AppE
+                                        ( AppE
+                                            ( AppE
+                                                ( VarE $ mkName "runSigTagSnoc" )
+                                                ( mkProxyE $ pred2tagSingleton predType )
+                                            )
+                                            ( mkProxyE $ VarT $ mkName "s" )
+                                        )
+                                        ( mkProxyE $ VarT $ mkName "t" )
+                                    )
+                                    ( mkProxyE $ VarT $ mkName "a" )
+                                )
+                                ( VarE $ mkName "s" )
                         )
                         []
                         | AppT (ConT predClass) predType <- cxt
                     ]
-                    ++ -}
+                    ++
                     -- catch all error message
                     [ Clause
                         [ VarP $ mkName "p", VarP $ mkName "s" ]
@@ -463,26 +510,6 @@ mkFAlgebra algName = do
                                         ++"_"++predType2str predType
                             )
                             [ VarP $ mkName $ "s" ]
---                             [ SigP
---                                 ( VarP $ mkName $ "s" )
---                                 ( AppT
---                                     ( AppT
---                                         ( AppT
---                                             ( ConT $ mkName "Sig" )
---                                             ( ConT predClass )
---                                         )
---                                         ( VarT $ mkName "s" )
---                                     )
---                                     ( VarT $ mkName "_" )
--- --                                     ( AppT
--- --                                         ( AppT
--- --                                             ( ConT $ mkName "App" )
--- --                                             ( VarT $ mkName "t" )
--- --                                         )
--- --                                         ( VarT $ mkName "a" )
--- --                                     )
---                                 )
---                             ]
                         ]
                         ( NormalB $  case predType of
                             (VarT _) -> AppE
@@ -513,17 +540,6 @@ mkFAlgebra algName = do
                                     )
                                 )
                                 ( VarE $ mkName "s" )
-
-
---                                         AppE
---                                             ( VarE $ mkName "runSig" )
---                                             ( SigE
---                                                 ( ConE $ mkName "Proxy" )
---                                                 ( AppT
---                                                     ( ConT $ mkName "Proxy" )
---                                                     ( subAllVars varName predType )
---                                                 )
---                                             )
                         )
                         []
                         | AppT (ConT predClass) predType <- cxt
@@ -569,7 +585,7 @@ mkFAlgebra algName = do
                                 b
                             )
                             PromotedNilT
-                            [1..10]
+                            [1..4]
                         )
                     )
                     ( VarT $ varName )
@@ -588,19 +604,20 @@ mkFAlgebra algName = do
     let instShow = InstanceD
             ( Just Overlappable )
             (
-                -- Show instances for predicate constructors
-                [ AppT ( ConT $ mkName "Show" ) argType
-                | GadtC _ [(_,argType)] _ <- consPred
-                ]
-                ++
-                -- Show instances for constructor arguments
-                ( concat $
-                    [ [ AppT ( ConT $ mkName "Show" ) argType
-                      | (_,argType) <- args
-                      ]
-                    | GadtC _ args _ <- consFunc
+                (nub $ concat $ concat $
+                [   [   [ AppT
+                            ( ConT $ mkName "Show" )
+                            ( subAllVars varName t )
+                        | t <- getReturnType sigType:getArgs sigType
+                        ]
+                    | SigD sigName sigType <- decs
                     ]
-                )
+                | PredInfo
+                    (AppT (ConT predClass) predType)
+                    (ClassI (ClassD _ _ _ _ decs) _)
+                    _
+                    <- allcxt
+                ])
             )
             ( AppT
                 ( ConT $ mkName "Show" )
@@ -618,6 +635,7 @@ mkFAlgebra algName = do
             [ FunD
                 ( mkName "show" )
                 (
+                    -- show all the class's predicates
                     [ Clause
                         [ ConP
                             ( mkName $ "Sig_"++nameBase algName
@@ -634,6 +652,7 @@ mkFAlgebra algName = do
                         | AppT (ConT predClass) predType <- cxt
                     ]
                     ++
+                    -- show all the class's functions
                     [ Clause
                         [ ConP
                             ( mkName $ "Sig_" ++ renameClassMethod sigName )
@@ -702,7 +721,6 @@ mkFAlgebra algName = do
                                     ( ConT $ mkName "View" )
                                     ( ConT predClass )
                                 )
---                                 PromotedNilT
                                 ( predType2tagType PromotedNilT $ getReturnType sigType )
                             )
                             ( VarT algName' )
@@ -804,295 +822,169 @@ mkFAlgebra algName = do
             )
 
     -- construct the `View alg alg'` instances
-    let instViews =
-            [ InstanceD
-                Nothing
-                []
-                ( AppT
+    let instViews = nub $ concat
+            [   [ InstanceD
+                    Nothing
+                    []
                     ( AppT
                         ( AppT
                             ( AppT
-                                ( ConT $ mkName "View" )
-                                ( ConT predClass )
-                            )
-                            PromotedNilT
-                        )
-                        ( ConT algName )
-                    )
-                    ( predType2tagType PromotedNilT predType )
-                )
-                [ if parent==thisPred
-                    -- parent predicates are stored directly in Sig
-                    -- there is no need to call embedSig recusively
-                    then FunD
-                        ( mkName "embedSig" )
-                        [ Clause
-                            []
-                            ( NormalB $ ConE $ mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
-                                        ++"_"++predType2str predType
-                            )
-                            []
-                        ]
-                    -- non-parent predicates must be embedded in the Sig
-                    -- with a recusive call to embedSig
-                    else FunD
-                        ( mkName "embedSig" )
-                        [ Clause
-                            [ SigP
-                                ( VarP $ mkName "s" )
                                 ( AppT
-                                    ( AppT
-                                        ( AppT
-                                            ( ConT $ mkName "Sig" )
-                                            ( ConT predClass
-                                            )
-                                        )
-                                        PromotedNilT
-                                    )
-                                    ( VarT varName )
+                                    ( ConT $ mkName "View" )
+                                    ( ConT predClass )
                                 )
+                                ( predType2tagType
+                                    PromotedNilT
+                                    ( getReturnType sigType )
+                                )
+                            )
+                            ( ConT algName )
+                        )
+                        ( predType2tagType
+                            ( predType2tagType PromotedNilT predType )
+                            ( getReturnType sigType )
+                        )
+                    )
+                    [ if parent==thisPred
+                        -- parent predicates are stored directly in Sig
+                        -- there is no need to call embedSig recusively
+                        then FunD
+                            ( mkName "embedSig" )
+                            [ Clause
+                                []
+                                ( NormalB $ ConE $ mkName $ "Sig_"++nameBase algName
+                                            ++"_"++nameBase predClass
+                                            ++"_"++predType2str predType
+                                )
+                                []
                             ]
-                            ( NormalB $ AppE
-                                ( ConE $ mkName $ "Sig_"++nameBase algName
-                                    ++"_"++nameBase parentClass
-                                    ++"_"++predType2str parentType
-                                )
-                                ( SigE
-                                    ( AppE
-                                        ( VarE $ mkName "embedSig" )
-                                        ( VarE $ mkName "s" )
-                                    )
+                        -- non-parent predicates must be embedded in the Sig
+                        -- with a recusive call to embedSig
+                        else FunD
+                            ( mkName "embedSig" )
+                            [ Clause
+                                [ SigP
+                                    ( VarP $ mkName "s" )
                                     ( AppT
                                         ( AppT
                                             ( AppT
                                                 ( ConT $ mkName "Sig" )
-                                                ( ConT parentClass )
+                                                ( ConT predClass
+                                                )
                                             )
-                                            ( case parentType of
-                                                (VarT _) -> predType2tagType PromotedNilT predType
-                                                _        -> typeListInit $ predType2tagType PromotedNilT predType
+                                            ( predType2tagType
+                                                PromotedNilT
+                                                ( getReturnType sigType )
                                             )
                                         )
                                         ( VarT varName )
                                     )
-                                )
-                            )
-                            []
-                        ]
-                , if parent==thisPred
-                    -- parent predicates are stored directly in Sig
-                    -- there is no need to call unsafeExtractSig
-                    then FunD
-                        ( mkName "unsafeExtractSig" )
-                        [ Clause
-                            [ ConP
-                                ( mkName $ "Sig_"++nameBase algName
-                                            ++"_"++nameBase predClass
-                                            ++"_"++predType2str predType
-                                )
-                                [ VarP $ mkName "s" ]
-                            ]
-                            ( NormalB $ AppE
-                                ( AppE
-                                    ( VarE $ mkName "unsafeCoerceSigTag" )
+                                ]
+                                ( NormalB $ AppE
+                                    ( ConE $ mkName $ "Sig_"++nameBase algName
+                                        ++"_"++nameBase parentClass
+                                        ++"_"++predType2str parentType
+                                    )
                                     ( SigE
-                                        ( ConE $ mkName "Proxy" )
+                                        ( AppE
+                                            ( VarE $ mkName "embedSig" )
+                                            ( VarE $ mkName "s" )
+                                        )
                                         ( AppT
-                                            ( ConT $ mkName "Proxy" )
-                                            PromotedNilT
+                                            ( AppT
+                                                ( AppT
+                                                    ( ConT $ mkName "Sig" )
+                                                    ( ConT parentClass )
+                                                )
+                                                ( case parentType of
+                                                    (VarT _) -> predType2tagType
+                                                        ( predType2tagType PromotedNilT predType )
+                                                        ( getReturnType sigType )
+                                                    _ -> typeListInit $ predType2tagType
+                                                        ( predType2tagType PromotedNilT predType )
+                                                        ( getReturnType sigType )
+                                                )
+                                            )
+                                            ( VarT varName )
                                         )
                                     )
                                 )
-                                ( VarE $ mkName "s" )
-                            )
-                           []
-                        ]
-                    -- non-parent predicates must be embedded in the Sig
-                    -- with a recusive call to unsafeExtractSig
-                    else FunD
-                        ( mkName "unsafeExtractSig" )
-                        [ Clause
-                            [ ConP
-                                ( mkName $ "Sig_"++nameBase algName
-                                            ++"_"++nameBase parentClass
-                                            ++"_"++predType2str parentType
-                                )
-                                [ VarP $ mkName "s" ]
+                                []
                             ]
-                            ( NormalB $ AppE
-                                ( VarE $ mkName "unsafeExtractSig" )
-                                ( AppE
+                    , if parent==thisPred
+                        -- parent predicates are stored directly in Sig
+                        -- there is no need to call unsafeExtractSig
+                        then FunD
+                            ( mkName "unsafeExtractSig" )
+                            [ Clause
+                                [ ConP
+                                    ( mkName $ "Sig_"++nameBase algName
+                                                ++"_"++nameBase predClass
+                                                ++"_"++predType2str predType
+                                    )
+                                    [ VarP $ mkName "s" ]
+                                ]
+                                ( NormalB $ AppE
                                     ( AppE
                                         ( VarE $ mkName "unsafeCoerceSigTag" )
                                         ( SigE
                                             ( ConE $ mkName "Proxy" )
                                             ( AppT
                                                 ( ConT $ mkName "Proxy" )
-                                                ( case parentType of
-                                                    (VarT _) -> predType2tagType PromotedNilT predType
-                                                    _        -> typeListInit $ predType2tagType PromotedNilT predType
-                                                )
+                                                ( predType2tagType PromotedNilT $ getReturnType sigType )
                                             )
                                         )
                                     )
                                     ( VarE $ mkName "s" )
                                 )
-                            )
-                            []
-                        ]
+                               []
+                            ]
+                        -- non-parent predicates must be embedded in the Sig
+                        -- with a recusive call to unsafeExtractSig
+                        else FunD
+                            ( mkName "unsafeExtractSig" )
+                            [ Clause
+                                [ ConP
+                                    ( mkName $ "Sig_"++nameBase algName
+                                                ++"_"++nameBase parentClass
+                                                ++"_"++predType2str parentType
+                                    )
+                                    [ VarP $ mkName "s" ]
+                                ]
+                                ( NormalB $ AppE
+                                    ( VarE $ mkName "unsafeExtractSig" )
+                                    ( AppE
+                                        ( AppE
+                                            ( VarE $ mkName "unsafeCoerceSigTag" )
+                                            ( SigE
+                                                ( ConE $ mkName "Proxy" )
+                                                ( AppT
+                                                    ( ConT $ mkName "Proxy" )
+                                                    ( case parentType of
+                                                        (VarT _) -> predType2tagType
+                                                            ( predType2tagType PromotedNilT predType )
+                                                            ( getReturnType sigType )
+                                                        _ -> typeListInit $ predType2tagType
+                                                            ( predType2tagType PromotedNilT predType )
+                                                            ( getReturnType sigType )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                        ( VarE $ mkName "s" )
+                                    )
+                                )
+                                []
+                            ]
+                    ]
+                | SigD _ sigType <- SigD undefined (VarT varName):decs
                 ]
             | PredInfo
                 (AppT (ConT predClass) predType)
-                _
+                (ClassI (ClassD _ _ _ _ decs) _)
                 (Just parent@(AppT (ConT parentClass) parentType))
                 <- allcxt
             ]
---             [ if parent == thisPred
---
---                 -- parent classes are stored directly in the Sig type
---                 then InstanceD
---                     Nothing
---                     []
---                     ( AppT
---                         ( AppT
---                             ( AppT
---                                 ( AppT
---                                     ( ConT $ mkName "View" )
---                                     ( ConT predClass )
---                                 )
---                                 PromotedNilT
---                             )
---                             ( ConT algName )
---                         )
---                         ( predType2tagType PromotedNilT predType )
---                     )
---                     [ FunD
---                         ( mkName "embedSig" )
---                         [ Clause
---                             []
---                             ( NormalB $ ConE
---                                 $ mkName $ "Sig_"++nameBase algName
---                                             ++"_"++nameBase predClass
---                                             ++"_"++predType2str predType
---                             )
---                             []
---                         ]
---                     , FunD
---                         ( mkName "unsafeExtractSig" )
---                         [ Clause
---                             [ ConP
---                                 ( mkName $ "Sig_"++nameBase algName
---                                             ++"_"++nameBase predClass
---                                             ++"_"++predType2str predType
---                                 )
---                                 [ VarP $ mkName "s" ]
---                             ]
--- --                             ( NormalB $ VarE $ mkName "s" )
---                             ( NormalB $ AppE
---                                 ( AppE
---                                     ( VarE $ mkName "unsafeCoerceSigTag" )
---                                     ( SigE
---                                         ( ConE $ mkName "Proxy" )
---                                         ( AppT
---                                             ( ConT $ mkName "Proxy" )
---                                             PromotedNilT
---                                         )
---                                     )
---                                 )
---                                 ( VarE $ mkName "s" )
---                             )
---                             []
---                         ]
--- --                     [
---                     ]
---
---                 -- non parent classes must call an additional embedSig
---                 else InstanceD
---                     Nothing
---                     []
---                     ( AppT
---                         ( AppT
---                             ( AppT
---                                 ( AppT
---                                     ( ConT $ mkName "View" )
---                                     ( ConT predClass )
---                                 )
---                                 PromotedNilT
---                             )
---                             ( ConT algName )
---                         )
---                         ( predType2tagType PromotedNilT predType )
---                     )
---                     [ FunD
---                         ( mkName "embedSig" )
---                         [ Clause
---                             [ SigP
---                                 ( VarP $ mkName "s" )
---                                 ( AppT
---                                     ( AppT
---                                         ( AppT
---                                             ( ConT $ mkName "Sig" )
---                                             ( ConT predClass )
---                                         )
---                                         PromotedNilT
---                                     )
---                                     ( VarT varName )
---                                 )
---                             ]
---                             ( NormalB $ AppE
---                                 ( ConE $ mkName $ "Sig_"++nameBase algName
---                                             ++"_"++nameBase parentClass
---                                             ++"_"++predType2str parentType
---                                 )
---                                 ( SigE
---                                     ( AppE
---                                         ( VarE $ mkName "embedSig" )
---                                         ( VarE $ mkName "s" )
---                                     )
---                                     ( AppT
---                                         ( AppT
---                                             ( AppT
---                                                 ( ConT $ mkName "Sig" )
---                                                 ( ConT parentClass )
---                                             )
---                                             ( case parentType of
---                                                 (VarT _) -> predType2tagType PromotedNilT predType
---                                                 _        -> PromotedNilT
---                                             )
--- --                                             PromotedNilT
--- --                                             ( predType2tagType PromotedNilT predType )
---                                         )
---                                         ( VarT varName )
---                                     )
---                                 )
---                             )
---                             []
---                         ]
--- --                     , FunD
--- --                         ( mkName "unsafeExtractSig" )
--- --                         [ Clause
--- --                             [ ConP
--- --                                 ( mkName $ "Sig_"++nameBase algName
--- --                                             ++"_"++nameBase parentClass
--- --                                             ++"_"++predType2str parentType
--- --                                 )
--- --                                 [ VarP $ mkName "s" ]
--- --                             ]
--- --                             ( NormalB $ AppE
--- --                                 ( VarE $ mkName "unsafeExtractSig" )
--- --                                 ( VarE $ mkName "s" )
--- --                             )
--- --                             []
--- --                         ]
--- --                     [
---                     ]
---             | PredInfo
---                 (AppT (ConT predClass) predType)
---                 _
---                 (Just parent@(AppT (ConT parentClass) parentType))
---                 <- allcxt
---             ]
 
     return $ ats ++ instViews ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
@@ -1129,13 +1021,18 @@ subAllVars varName = go
         go (AppT t1 t2) = AppT (go t1) (go t2)
         go t = t
 
+mkProxyE :: TH.Type -> Exp
+mkProxyE t = SigE
+    ( ConE $ mkName "Proxy" )
+    ( AppT (ConT $ mkName "Proxy") t)
+
 -- | Stores all the information we'll need about a predicate
 data PredInfo = PredInfo
     { predSig    :: Pred
     , predReify  :: Info
     , predHost   :: Maybe Pred
     }
-    deriving (Eq)
+    deriving (Eq,Show)
 
 -- | Given a predicate that represents a class/tag combination,
 -- recursively list all super predicates

@@ -1,6 +1,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE CPP #-}
 
 module FAlgebraExample
@@ -18,6 +19,8 @@ import FAlgebra
 -- import FAlgebra98
 -- import Topology
 -- import Lattice
+
+import Unsafe.Coerce
 
 --------------------------------------------------------------------------------
 
@@ -69,13 +72,25 @@ mkFAlgebra ''Topology
 --
 -- instance FAlgebra Topology where
 --     data Sig Topology t a where
---         Sig_Topology_LowerBounded_Logic ::
---             Sig LowerBounded t a -> Sig Topology (t `Snoc` TLogic) a
+--         Sig_Topology_LowerBounded_Logic
+--             :: Sig LowerBounded ttt a
+--             -> Sig Topology (ttt `Snoc` TLogic) a
 --         Sig_eq :: a -> a -> Sig Topology '[TLogic] a
 --
 --     runSig (p::proxy a) (Sig_Topology_LowerBounded_Logic s)
 --         = runSigSnoc (Proxy::Proxy TLogic) (Proxy::Proxy a) s
 --
+--     runSigTag
+--         (p::proxy a)
+--         (Sig_Topology_LowerBounded_Logic
+--             s::Sig Topology (s:t) (App t a)
+--         )
+--         = runSigTagSnoc
+--             (Proxy::Proxy TLogic)
+--             (Proxy::Proxy s)
+--             (Proxy::Proxy t)
+--             (Proxy::Proxy a)
+--             s
 --     runSigTag p (Sig_eq e1 e2) = e1==e2
 --
 --     mape f (Sig_Topology_LowerBounded_Logic s) = Sig_Topology_LowerBounded_Logic $ mape f s
@@ -109,6 +124,10 @@ mkFAlgebra ''Topology
 --
 -- instance {-#OVERLAPS#-} Show (Sig Topology (t0 ': t1 ': t2 ': t3 ': t4 ': '[]) a) where
 --     show _ = "<overflow>"
+
+instance Topology Bool where
+    type Logic Bool = Bool
+    (==) = (P.==)
 
 instance Topology Int where
     type Logic Int = Bool
@@ -164,12 +183,13 @@ mkFAlgebra ''Semigroup
 --         = Sig_Semigroup_Topology_ s
 --     unsafeExtractSig (Sig_Semigroup_Topology_ s)
 --         = unsafeCoerceSigTag (Proxy::Proxy '[]) s
-instance View Topology '[TLogic] Semigroup '[TLogic] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Semigroup_Topology_ s
-    unsafeExtractSig (Sig_Semigroup_Topology_ s)
-        = unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
---
+
+-- instance View Topology '[TLogic] Semigroup '[TLogic] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Semigroup_Topology_ s
+--     unsafeExtractSig (Sig_Semigroup_Topology_ s)
+--         = unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
+
 -- instance
 --     ( Show a
 --     ) => Show (Sig Semigroup t a)
@@ -188,11 +208,11 @@ class Semigroup a => Monoid a where
 
 mkFAlgebra ''Monoid
 
-instance View Topology '[TLogic] Monoid '[TLogic] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Monoid_Semigroup_ (embedSig s :: Sig Semigroup '[TLogic] a)
-    unsafeExtractSig (Sig_Monoid_Semigroup_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
+-- instance View Topology '[TLogic] Monoid '[TLogic] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Monoid_Semigroup_ (embedSig s :: Sig Semigroup '[TLogic] a)
+--     unsafeExtractSig (Sig_Monoid_Semigroup_ s)
+--         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
 
 instance Monoid Int where zero = 0
 instance (Monoid a, Monoid b) => Monoid (a,b) where
@@ -283,16 +303,17 @@ mkFAlgebra ''Module
 -- instance View Monoid '[] Module '[] where
 --     embedSig s = Sig_Module_Monoid_ s
 --     unsafeExtractSig (Sig_Module_Monoid_ s) = s
-instance View Topology '[TLogic] Module '[TLogic] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Module_Monoid_ (embedSig s :: Sig Monoid '[TLogic] a)
-    unsafeExtractSig (Sig_Module_Monoid_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
-instance View Topology '[TLogic] Module '[TLogic,TScalar] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Module_Monoid_Scalar_ (embedSig s :: Sig Monoid '[TLogic] a)
-    unsafeExtractSig (Sig_Module_Monoid_Scalar_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
+
+-- instance View Topology '[TLogic] Module '[TLogic] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Module_Monoid_ (embedSig s :: Sig Monoid '[TLogic] a)
+--     unsafeExtractSig (Sig_Module_Monoid_ s)
+--         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
+-- instance View Topology '[TLogic] Module '[TLogic,TScalar] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Module_Monoid_Scalar_ (embedSig s :: Sig Monoid '[TLogic] a)
+--     unsafeExtractSig (Sig_Module_Monoid_Scalar_ s)
+--         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
 
 -- instance
 --     ( Show a
@@ -321,19 +342,14 @@ mkFAlgebra ''Hilbert
 
 -- instance FAlgebra Hilbert where
 --     data Sig Hilbert t a where
--- --         Sig_Hilbert_Module_ :: Sig Module '[] a -> Sig Hilbert '[] a
--- --         Sig_Hilbert_Module_Scalar :: Sig Monoid '[] a -> Sig Hilbert '[TScalar] a
 --         Sig_Hilbert_Module_ :: Sig Module t a -> Sig Hilbert t a
--- --         Sig_Hilbert_Module_Scalar :: Sig Monoid t a -> Sig Hilbert (TScalar ': t) a
 --         Sig_ltgt :: a -> a -> Sig Hilbert '[TScalar] a
 --
 --     runSig p (Sig_Hilbert_Module_ s) = runSig p s
--- --     runSig (p::proxy a) (Sig_Hilbert_Module_Scalar s) = runSig (Proxy::Proxy (Scalar a)) s
 --
 --     runSigTag p (Sig_ltgt e1 e2) = e1<>e2
 --
 --     mape f (Sig_Hilbert_Module_ s) = Sig_Hilbert_Module_ $ mape f s
--- --     mape f (Sig_Hilbert_Module_Scalar s) = Sig_Hilbert_Module_Scalar $ mape f s
 --     mape f (Sig_ltgt e1 e2) = Sig_ltgt (f e1) (f e2)
 --
 -- instance View Module '[] Hilbert '[] where
@@ -343,24 +359,9 @@ mkFAlgebra ''Hilbert
 -- instance View Monoid '[] Hilbert '[] where
 --     embedSig s = Sig_Hilbert_Module_ $ embedSig s
 -- instance View Semigroup '[] Hilbert '[TScalar] where
--- --     embedSig s = Sig_Hilbert_Module_Scalar $ embedSig s
 --     embedSig s = Sig_Hilbert_Module_ $ embedSig s
 -- instance View Monoid '[] Hilbert '[TScalar] where
--- --     embedSig s = Sig_Hilbert_Module_Scalar $ embedSig s
--- --     embedSig s = Sig_Hilbert_Module_Scalar $ s
 --     embedSig s = Sig_Hilbert_Module_ $ embedSig s
--- -- instance View Module '[] Hilbert '[TScalar] where
--- --     embedSig s = Sig_Hilbert_Module_Scalar $ s
-instance View Topology '[TLogic] Hilbert '[TLogic] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TLogic] a)
-    unsafeExtractSig (Sig_Hilbert_Module_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
-instance View Topology '[TLogic] Hilbert '[TLogic,TScalar] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TLogic,TScalar] a)
-    unsafeExtractSig (Sig_Hilbert_Module_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
 -- instance View Hilbert '[TScalar] Hilbert '[TScalar] where
 --     embedSig (s :: Sig Hilbert '[TScalar] a)
 --         = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TScalar] a)
@@ -371,6 +372,18 @@ instance View Topology '[TLogic] Hilbert '[TLogic,TScalar] where
 --         = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TScalar,TScalar] a)
 --     unsafeExtractSig (Sig_Hilbert_Module_ s)
 --         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TScalar]) s
+
+
+-- instance View Topology '[TLogic] Hilbert '[TLogic] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TLogic] a)
+--     unsafeExtractSig (Sig_Hilbert_Module_ s)
+--         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
+-- instance View Topology '[TLogic] Hilbert '[TLogic,TScalar] where
+--     embedSig (s :: Sig Topology '[TLogic] a)
+--         = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TLogic,TScalar] a)
+--     unsafeExtractSig (Sig_Hilbert_Module_ s)
+--         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
 
 -- instance
 --     ( View Module '[] alg t
@@ -389,7 +402,6 @@ instance View Topology '[TLogic] Hilbert '[TLogic,TScalar] where
 --     ) => Show (Sig Hilbert t a)
 --         where
 --     show (Sig_Hilbert_Module_ s) = show s
--- --     show (Sig_Hilbert_Module_Scalar s) = show s
 --     show (Sig_ltgt e1 e2) = show e1++"<>"++show e2
 --
 -- instance {-#OVERLAPS#-} Show (Sig Hilbert (t0 ': t1 ': t2 ': t3 ': t4 ': '[]) a) where
@@ -401,35 +413,70 @@ instance Hilbert a => Hilbert (a,a) where
 
 ----------------------------------------
 
-class Hilbert a => Floobert a where
+
+class (Hilbert a, Hilbert (Floo a)) => Floobert a where
+    type Floo a
     floo :: a -> a
 
 mkFAlgebra ''Floobert
 
-instance Floobert Int
-instance Floobert a => Floobert (a,a)
+-- data TFloo
+--
+-- instance FAlgebra Floobert where
+--     data Sig Floobert t a where
+--         Sig_Floobert_Hilbert_ :: Sig Hilbert t a -> Sig Floobert (t `Snoc` TFloo) a
+--         Sig_floo :: a -> Sig Floobert '[] a
+--
+-- --     runSig p (Sig_Floobert_Hilbert_ s) = runSig p s
+--     runSig p (Sig_floo e1) = floo e1
+--
+--     mape f (Sig_Floobert_Hilbert_ s) = Sig_Floobert_Hilbert_ $ mape f s
+--     mape f (Sig_floo e1) = Sig_floo (f e1)
+--
+-- instance
+--     ( View Hilbert '[TScalar] alg (TScalar ': TFloo ': t)
+--     , View Floobert '[] alg t
+--     , View Module '[] alg (TFloo ': t)
+--     , View Monoid '[] alg (TFloo ': t)
+--     , View Monoid '[] alg (TScalar ': TFloo ': t)
+--     , View Semigroup '[] alg (TFloo ': t)
+--     , View Semigroup '[] alg (TScalar ': TFloo ': t)
+--     , View Topology '[TLogic] alg (TLogic ': TFloo ': t)
+--     , View Topology '[TLogic] alg (TLogic ': TScalar ': TFloo ': t)
+--     , View Poset '[] alg (TLogic ': TFloo ': t)
+--     , View Poset '[] alg (TLogic ': TScalar ': TFloo ': t)
+--     , View LowerBounded '[] alg (TLogic ': TFloo ': t)
+--     , View LowerBounded '[] alg (TLogic ': TScalar ': TFloo ': t)
+--     , TypeConstraints t a
+--     ) => Floobert (Free (Sig alg) t a)
+--         where
+--     type Floo (Free (Sig alg) t a) = Free (Sig alg) (TFloo ': t) a
+--     floo e1 = Free $ embedSig $ Sig_floo e1
+--
+-- -- instance View Hilbert '[TScalar] Hilbert '[TScalar] where
+-- --     embedSig (s :: Sig Hilbert '[TScalar] a)
+-- --         = Sig_Hilbert_Module_ (embedSig s :: Sig Module '[TScalar] a)
+-- instance View Semigroup '[] Floobert '[] where
+--     embedSig (s :: Sig Semigroup '[] a)
+--         = Sig_Floobert_Hilbert_ (embedSig s :: Sig Floobert '[TFloo] a)
+--
+-- instance
+--     ( Show a
+--     , Show (Scalar a)
+-- --     , Show (Scalar a)
+-- --     , Show (Sig Hilbert (Init t) a)
+--     ) => Show (Sig Floobert t a)
+--         where
+--     show (Sig_Floobert_Hilbert_ s) = show s
+--     show (Sig_floo e1) = "floo "++show e1
+--
+-- instance {-#OVERLAPS#-} Show (Sig Floobert (t0 ': t1 ': t2 ': t3 ': t4 ': '[]) a) where
+--     show _ = "<overflow>"
 
-instance View Hilbert '[TScalar] Floobert '[TScalar] where
-    embedSig (s :: Sig Hilbert '[TScalar] a)
-        = Sig_Floobert_Hilbert_ (embedSig s :: Sig Hilbert '[TScalar] a)
-    unsafeExtractSig (Sig_Floobert_Hilbert_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TScalar]) s
--- instance View Hilbert '[TScalar] Floobert '[TScalar,TScalar] where
---     embedSig (s :: Sig Hilbert '[TScalar] a)
---         = Sig_Floobert_Hilbert_ (embedSig s :: Sig Hilbert '[TScalar,TScalar] a)
---     unsafeExtractSig (Sig_Floobert_Hilbert_ s)
---         = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TScalar,TScalar]) s
-instance View Topology '[TLogic] Floobert '[TLogic] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Floobert_Hilbert_ (embedSig s :: Sig Hilbert '[TLogic] a)
-    unsafeExtractSig (Sig_Floobert_Hilbert_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
-instance View Topology '[TLogic] Floobert '[TLogic,TScalar] where
-    embedSig (s :: Sig Topology '[TLogic] a)
-        = Sig_Floobert_Hilbert_ (embedSig s :: Sig Hilbert '[TLogic,TScalar] a)
-    unsafeExtractSig (Sig_Floobert_Hilbert_ s)
-        = unsafeExtractSig $ unsafeCoerceSigTag (Proxy::Proxy '[TLogic]) s
-
+instance Floobert Int where
+    type Floo Int = Int
+instance (Hilbert a, Floobert a) => Floobert (a,a) where
+    type Floo (a,a) = a
 
 --------------------------------------------------------------------------------
 
@@ -440,6 +487,9 @@ x = Pure (1,2)
 
 y :: Free (Sig Space) '[TScalar] (Int,Int)
 y = Pure 2
+
+z :: Free (Sig Space) '[TFloo] (Int,Int)
+z = Pure 2
 
 type instance TypeConstraints t a = ()
 

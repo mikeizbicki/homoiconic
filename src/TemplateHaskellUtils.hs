@@ -42,6 +42,7 @@ isOperator str = not $ length str == length (renameClassMethod $ mkName $ str)
 -- return a list of the arguments to that function,
 -- and discard the return value.
 getArgs :: TH.Type -> [TH.Type]
+getArgs (ForallT _ _ t) = getArgs t
 getArgs (AppT (AppT ArrowT t1) t2) = t1:getArgs t2
 getArgs t = []
 
