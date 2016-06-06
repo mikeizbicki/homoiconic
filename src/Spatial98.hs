@@ -34,10 +34,10 @@ data EpsLaw (alg :: * -> Constraint) a = EpsLaw
     , epsilon :: [a] -> Neighborhood a
     }
 
-class (Variety98 alg, alg a, Topology a) => Approximate98 alg a where
+class (HomVariety alg, alg a, Topology a) => Approximate98 alg a where
     epsLaws :: [EpsLaw alg a]
 
-instance {-#OVERLAPPABLE#-} (Variety98 alg, alg a, Topology a) => Approximate98 alg a where
+instance {-#OVERLAPPABLE#-} (HomVariety alg, alg a, Topology a) => Approximate98 alg a where
     epsLaws = []
 
 --------------------------------------------------------------------------------
@@ -53,9 +53,9 @@ lookupEpsLaw lawName = case lookup lawName lawmap of
         lawmap = map (\x -> (epsLawName x,x)) (epsLaws::[EpsLaw alg a])
 
 epsLaw2quickcheck :: forall (a :: *) alg.
-    ( Variety98 alg
+    ( HomVariety alg
     , alg a
-    , Testable98 a
+    , HomTestable a
     , Topology a
     ) => Proxy a -> Law alg -> TestTree
 epsLaw2quickcheck p law = QC.testProperty (lawName law) $ do
@@ -65,18 +65,18 @@ epsLaw2quickcheck p law = QC.testProperty (lawName law) $ do
 
 checkApproximate ::
     ( Approximate98 alg a
-    , Testable98 a
+    , HomTestable a
     ) => [a] -> Law alg -> Logic a
 checkApproximate as law
-    = (eval98 $ subVars (lhs law) varmap)
-   == (eval98 $ subVars (rhs law) varmap)
+    = (runHomAST $ subVars (lhs law) varmap)
+   == (runHomAST $ subVars (rhs law) varmap)
     where
         varmap = zip (toList (lhs law) ++ toList (rhs law)) as
 
 approxclass2tasty :: forall alg a.
-    ( Variety98 alg
+    ( HomVariety alg
     , alg a
-    , Testable98 a
+    , HomTestable a
     , Topology a
     ) => Proxy alg -> Proxy a -> TestTree
 approxclass2tasty palg pa = testGroup
@@ -84,9 +84,9 @@ approxclass2tasty palg pa = testGroup
     $ map (epsLaw2quickcheck pa) (laws::[Law alg])
 
 -- runTestsApprox :: forall alg a.
---     ( Variety98 alg
+--     ( HomVariety alg
 --     , alg a
---     , Testable98 a
+--     , HomTestable a
 --     , Topology a
 --     ) => Proxy alg -> Proxy a -> IO ()
 -- -- runTestsApprox _ _ = return ()

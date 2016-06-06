@@ -36,29 +36,29 @@ class
     isNeighbor :: a -> (a,Neighborhood a) -> Bool
     isNeighbor a1 (a2,n) = (a1==a2) n
 
-    infixr 4 ==
-    (==) :: a -> a -> Logic a
-    (==) a1 a2 n = isNeighbor a1 (a2,n)
-
-    infixr 4 /=
-    (/=) :: a -> a -> Logic a
-    (/=) = not (==)
-
-    infixr 4 <=
-    (<=) :: Poset a => a -> a -> Logic a
-    (<=) a1 a2 = inf a1 a2 == a1
-
-    infixr 4 <
-    (<) :: Poset a => a -> a -> Logic a
-    (<) a1 a2 = inf a1 a2 == a1 && a1 /= a2
-
-    infixr 4 >=
-    (>=) :: Lattice a => a -> a -> Logic a
-    (>=) a1 a2 = sup a1 a2 == a1
-
-    infixr 4 >
-    (>) :: Lattice a => a -> a -> Logic a
-    (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
+--     infixr 4 ==
+--     (==) :: a -> a -> Logic a
+--     (==) a1 a2 n = isNeighbor a1 (a2,n)
+--
+--     infixr 4 /=
+--     (/=) :: a -> a -> Logic a
+--     (/=) = not (==)
+--
+--     infixr 4 <=
+--     (<=) :: Poset a => a -> a -> Logic a
+--     (<=) a1 a2 = inf a1 a2 == a1
+--
+--     infixr 4 <
+--     (<) :: Poset a => a -> a -> Logic a
+--     (<) a1 a2 = inf a1 a2 == a1 && a1 /= a2
+--
+--     infixr 4 >=
+--     (>=) :: Lattice a => a -> a -> Logic a
+--     (>=) a1 a2 = sup a1 a2 == a1
+--
+--     infixr 4 >
+--     (>) :: Lattice a => a -> a -> Logic a
+--     (>) a1 a2 = sup a1 a2 == a1 && a1 /= a2
 
 -- NOTE:
 -- This law states that (==) is a Lattice and LowerBound homomorphism from (Neighborhood a) to Bool.

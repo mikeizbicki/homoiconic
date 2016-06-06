@@ -1,7 +1,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module FAlgebra98Example
+module HomFAlgebraExample
     where
 
 import Prelude hiding (Monoid (..),(-),(+),negate,(==))
@@ -22,9 +22,9 @@ import Lattice
 class Semigroup a where
     (+) :: a -> a -> a
 
-mkFAlgebra98 ''Semigroup
+mkHomFAlgebra ''Semigroup
 
-instance Variety98 Semigroup where
+instance HomVariety Semigroup where
     laws = [ Law
         { lawName = "associative"
         , lhs = (var1+var2)+var3
@@ -42,7 +42,7 @@ instance Approximate98 Semigroup Float where
             }
         ]
 
--- instance FAlgebra98 Semigroup where
+-- instance HomFAlgebra Semigroup where
 --     data Sig98 Semigroup a where
 --         Sig98_plus :: a -> a -> Sig98 Semigroup a
 --     runSig98 (Sig98_plus a1 a2) = a1+a2
@@ -56,26 +56,26 @@ instance Approximate98 Semigroup Float where
 -- instance Show a => Show (Sig98 Semigroup a) where
 --     show (Sig98_plus a1 a2) = show a1++"+"++show a2
 
--- pattern Expr98_plus ::
+-- pattern HomAST_plus ::
 --     ( View98 Semigroup alg
---     ) => Expr98 alg e
---       -> Expr98 alg e
---       -> Expr98 alg e
--- pattern Expr98_plus e1 e2 <- Free98 (unsafeExtractSig -> Sig98_plus e1 e2) where
---     Expr98_plus e1 e2 = Free98 $ embedSig $ Sig98_plus e1 e2
+--     ) => HomAST alg e
+--       -> HomAST alg e
+--       -> HomAST alg e
+-- pattern HomAST_plus e1 e2 <- Free98 (unsafeExtractSig -> Sig98_plus e1 e2) where
+--     HomAST_plus e1 e2 = Free98 $ embedSig $ Sig98_plus e1 e2
 
 -- instance View98 Semigroup alg => Semigroup (Free98 (Sig98 alg) a) where
 --     (+) e1 e2 = Free98 $ embedSig $ Sig98_plus e1 e2
---     (+) = Expr98_plus
+--     (+) = HomAST_plus
 
 --------------------
 
 class Semigroup a => Monoid a where
     zero :: a
 
-mkFAlgebra98 ''Monoid
+mkHomFAlgebra ''Monoid
 
-instance Variety98 Monoid where
+instance HomVariety Monoid where
     laws =
         [ Law
             { lawName = "identity-left"
@@ -92,7 +92,7 @@ instance Variety98 Monoid where
 instance Monoid Int where zero = 0
 instance Monoid Float where zero = 0
 
--- instance FAlgebra98 Monoid where
+-- instance HomFAlgebra Monoid where
 --     data Sig98 Monoid a where
 --         Sig98_Semigroup_Monoid :: Sig98 Semigroup a -> Sig98 Monoid a
 --         Sig98_zero :: Sig98 Monoid a
@@ -119,9 +119,9 @@ instance Monoid Float where zero = 0
 class Semigroup a => Cancellative a where
     (-) :: a -> a -> a
 
-mkFAlgebra98 ''Cancellative
+mkHomFAlgebra ''Cancellative
 
-instance Variety98 Cancellative where
+instance HomVariety Cancellative where
     laws =
         [ Law
             { lawName = "cancellation-right"
@@ -144,9 +144,9 @@ class (Cancellative a, Monoid a) => Group a where
     negate :: a -> a
     negate a = zero - a
 
-mkFAlgebra98 ''Group
+mkHomFAlgebra ''Group
 
-instance Variety98 Group where
+instance HomVariety Group where
     laws =
         [ Law
             { lawName = "defn-negate"
@@ -172,3 +172,20 @@ instance Group Float where negate = P.negate
 --     embedSig s = Sig98_Group_Monoid (embedSig s)
 --     unsafeExtractSig (Sig98_Group_Monoid s) = unsafeExtractSig s
 
+
+--------------------------------------------------------------------------------
+
+associator :: Group a => a -> a -> a -> a
+associator a1 a2 a3 = ((a1+a2)+a3) - (a1+(a2+a3))
+
+class HomFAlgebra alg => ToExpr alg a where
+    toExpr_ :: Int -> proxy alg -> a -> HomAST alg Var
+
+toExpr :: ToExpr alg a => proxy alg -> a -> HomAST alg Var
+toExpr = toExpr_ 0
+
+instance {-#OVERLAPPABLE#-} HomFAlgebra alg => ToExpr alg a where
+    toExpr_ i palg _ = (mkExprVar $ "var"++show i)
+
+instance {-#OVERLAPS#-} ToExpr alg a => ToExpr alg (HomAST alg Var -> a) where
+    toExpr_ i palg f = toExpr_ (i+1) palg $ f (mkExprVar $ "var"++show i)

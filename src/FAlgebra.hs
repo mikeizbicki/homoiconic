@@ -116,6 +116,25 @@ unsafeCoerceSigTag _ = unsafeCoerce
 
 ----------------------------------------
 
+data HaskTag {-cxt-} a b where
+    HaskTag ::
+        ( forall (s::[AT]). () --cxt s
+            => Proxy s
+--             -> Proxy cxt
+            -> Proxy a
+            -> Proxy b
+            -> App s a
+            -> App s b
+        ) -> HaskTag a b
+
+apHaskTag :: forall t a b . Proxy (t::[AT]) -> HaskTag a b -> App t a -> App t b
+apHaskTag pt (HaskTag f) = f pt (Proxy::Proxy a) (Proxy::Proxy b)
+
+class FunctorTag (f::[AT]->Type->Type) where
+    fmapTag :: HaskTag a b -> f t a -> f t b
+
+----------------------------------------
+
 data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
     FreeTag  :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
     Free     :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
@@ -143,9 +162,102 @@ eval (Pure    a) = a
 eval (Free    s) = runSig    (Proxy::Proxy a) $ mape eval s
 eval (FreeTag s) = runSigTag (Proxy::Proxy a) $ mape eval s
 
+class NoCxt (a::k)
+instance NoCxt a
+
+haskEval :: forall cxt alg t a.
+    ( alg a
+    , FAlgebra alg
+    , FunctorTag (Sig alg)
+    ) => HaskTag (Free (Sig alg) t a) (App t a)
+haskEval = HaskTag go
+    where
+        go :: forall (s::[AT]) .
+            ( alg a
+            , FAlgebra alg
+            , FunctorTag (Sig alg)
+            ) => Proxy s
+--               -> Proxy cxt
+              -> Proxy (Free (Sig alg) t a)
+              -> Proxy (App t a)
+              -> App s (Free (Sig alg) t a)
+              -> App s (App t a)
+        go _ _ _ expr = case appFree @s @t @a @alg expr of
+            (Pure a) -> appApp
+                (Proxy::Proxy s)
+                (Proxy::Proxy t)
+                (Proxy::Proxy a)
+                 a
+            (Free f) -> appApp
+                    (Proxy::Proxy s)
+                    (Proxy::Proxy t)
+                    (Proxy::Proxy a)
+                $ runSig (Proxy::Proxy a)
+                $ fmapTag haskEval f
+            (FreeTag f) -> appApp
+                    (Proxy::Proxy s)
+                    (Proxy::Proxy t)
+                    (Proxy::Proxy a)
+                $ runSigTag (Proxy::Proxy a)
+                $ fmapTag haskEval f
+
+class
+    ( View alg1 (s++t) alg2 (s++t)
+    ) => ValidView
+        (alg1::Type->Constraint)
+        (alg2::Type->Constraint)
+        (t::[AT])
+        (s::[AT])
+instance
+    ( View alg1 (s++t) alg2 (s++t)
+    ) => ValidView alg1 alg2 t s
+
+embedExpr :: forall alg1 alg2 cxt (s::[AT]) t a.
+    ( FAlgebra alg1
+--     , FunctorTag (ValidView alg1 alg2 t) (Sig alg1)
+    , FunctorTag (Sig alg1)
+    , ValidView alg1 alg2 t s
+    ) => HaskTag
+--         (ValidView alg1 alg2 t)
+        (Free (Sig alg1) t a)
+        (Free (Sig alg2) t a)
+embedExpr = HaskTag go
+    where
+        go :: forall (s::[AT]).
+            ( FAlgebra alg1
+            , FunctorTag (Sig alg1)
+--             , FunctorTag (ValidView alg1 alg2 t) (Sig alg1)
+            , ValidView alg1 alg2 t s
+            ) => Proxy s
+--               -> Proxy (ValidView alg1 alg2 t)
+              -> Proxy (Free (Sig alg1) t a)
+              -> Proxy (Free (Sig alg2) t a)
+              -> App s (Free (Sig alg1) t a)
+              -> App s (Free (Sig alg2) t a)
+        go _ _ _ expr = case appFree @s @t @a @alg1 expr of
+            (Pure a) -> appFree' @s @t @a @alg2 (Pure a)
+            (Free f) -> appFree' @s @t @a @alg2
+                $ Free
+                $ embedSig
+--                 $ _ embedExpr f
+                $ fmapTag  embedExpr f
+-- --             (FreeTag f) -> appFree' @s @t @a @alg2
+-- --                 $ FreeTag
+-- --                 $ embedSig
+-- --                 $ fmapTag @(ValidView alg1 alg2 t) embedExpr f
+
+appFree :: forall (s::[AT]) t a alg. App s (Free (Sig alg) t a) -> Free (Sig alg) (s++t) a
+appFree = unsafeCoerce
+
+appFree' :: forall (s::[AT]) t a alg. Free (Sig alg) (s++t) a -> App s (Free (Sig alg) t a)
+appFree' = unsafeCoerce
+
+appApp :: Proxy (s::[AT]) -> Proxy t -> Proxy a -> App (s++t) a -> App s (App t a)
+appApp _ _ _ = unsafeCoerce
+
 ----------------------------------------
 
-class FAlgebra (alg::Type->Constraint) where
+class Typeable alg => FAlgebra (alg::Type->Constraint) where
     data Sig alg (t::[AT]) a
 
     runSigTag :: alg a => proxy a -> Sig alg (s ':  t) (App t a) -> App (s ':  t) a
@@ -159,8 +271,11 @@ class FAlgebra (alg::Type->Constraint) where
 ----------------------------------------
 
 class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
-    embedSig         :: Sig alg1       t1  a -> Sig alg2       t2  a
-    unsafeExtractSig :: Sig alg2       t2  a -> Sig alg1       t1  a
+    embedSig          :: Sig alg1       t1  a -> Sig alg2       t2  a
+    unsafeExtractSig  :: Sig alg2       t2  a -> Sig alg1       t1  a
+
+--     embedExpr         :: Free (Sig alg1) t1 a -> Free (Sig alg2) t2 a
+--     unsafeExtractExpr :: Free (Sig alg2) t2 a -> Free (Sig alg1) t1 a
 
 embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
 embedSigTag = embedSig
@@ -168,6 +283,192 @@ embedSigTag = embedSig
 instance FAlgebra alg => View alg t alg t where
     embedSig = id
     unsafeExtractSig = id
+
+--------------------------------------------------------------------------------
+
+type Expr (alg::Type->Constraint) t a = Free (Sig alg) t a
+
+data Law alg t = Law
+    { lawName :: String
+    , lhs :: Expr alg t Var
+    , rhs :: Expr alg t Var
+    }
+
+deriving instance Show (Expr alg t Var) => Show (Law alg t)
+
+newtype Var = Var String
+    deriving (Eq)
+
+instance Show Var where
+    show (Var v) = v
+
+var1 :: Expr alg '[] Var
+var1 = Pure $ Var "var1"
+
+var2 :: Expr alg '[] Var
+var2 = Pure $ Var "var2"
+
+var3 :: Expr alg '[] Var
+var3 = Pure $ Var "var3"
+
+--------------------
+
+-- type Op0 alg = Expr alg Var
+-- type Op1 alg = Expr alg Var -> Expr alg Var
+-- type Op2 alg = Expr alg Var -> Expr alg Var -> Expr alg Var
+--
+-- commutative :: Op2 alg -> Law alg
+-- commutative f = Law
+--     { lawName = "commutative"
+--     , lhs = f var1 var2
+--     , rhs = f var2 var1
+--     }
+--
+-- associative :: Op2 alg -> Law alg
+-- associative f = Law
+--     { lawName = "associative"
+--     , lhs = (var1 `f`  var2) `f` var3
+--     , rhs =  var1 `f` (var2  `f` var3)
+--     }
+--
+-- idempotent :: Op2 alg -> Law alg
+-- idempotent f = Law
+--     { lawName = "idempotent"
+--     , lhs = f var1 var1
+--     , rhs = var1
+--     }
+--
+-- identity_left :: Op0 alg -> Op2 alg -> Law alg
+-- identity_left f0 f2 = Law
+--     { lawName = "identity_left"
+--     , lhs = f2 f0 var1
+--     , rhs = var1
+--     }
+--
+-- identity_right :: Op0 alg -> Op2 alg -> Law alg
+-- identity_right f0 f2 = Law
+--     { lawName = "identity_right"
+--     , lhs = f2 var1 f0
+--     , rhs = var1
+--     }
+
+--------------------
+
+-- type family AncestorClasses (t::Type->Constraint) :: [Type -> Constraint]
+
+type ClassSig = (Type->Constraint,[AT])
+
+type family ParentClasses (alg::ClassSig) :: [ClassSig]
+
+type AncestorClasses alg = Nub (AncestorClasses_ (ParentClasses alg))
+
+type family AncestorClasses_ (xs::[ClassSig]) :: [ClassSig] where
+    AncestorClasses_ (x ': xs) = x ': (AncestorClasses_ (ParentClasses x) ++ AncestorClasses_ xs)
+    AncestorClasses_ '[] = '[]
+
+-- type family (++) (xs1:: [x]) (xs2:: [x]) :: [x] where
+--     '[] ++ '[] = '[]
+--     '[] ++ xs2 = xs2
+--     xs1 ++ '[] = xs1
+--     (x ': xs1) ++ xs2 = x ': (xs1++xs2)
+
+type family Nub xs where
+    Nub '[] = '[]
+    Nub (x ': xs) = x ': Nub (Remove x xs)
+
+type family Remove x xs where
+    Remove x '[]       = '[]
+    Remove x (x ': ys) =      Remove x ys
+    Remove x (y ': ys) = y ': Remove x ys
+
+--------------------
+
+-- class (FAlgebra alg , ListLaws alg (AncestorClasses '(alg,'[]))) => Variety alg where
+class FAlgebra alg => Variety alg where
+    laws :: [Law alg '[]]
+
+-- class Variety alg => ListLaws alg (xs::[ClassSig]) where
+--     listLaws :: Proxy xs -> [(TypeRep,[Law alg '[]])]
+--
+-- instance Variety alg => ListLaws alg '[] where
+--     listLaws _ = []
+--
+-- instance
+--     ( Variety alg
+--     , Variety alg'
+--     , View alg' t' alg '[]
+--     , ListLaws alg xs
+--     , Typeable t'
+--     ) => ListLaws alg ( '(alg',t') ': xs)
+--         where
+--     listLaws _ =
+--         [ (typeRep (Proxy::Proxy alg'), embedLaws (laws::[Law alg' t'])) ]
+--         ++
+--         listLaws (Proxy::Proxy xs)
+--
+-- allLaws :: forall alg t. ListLaws alg (AncestorClasses '(alg,'[])) => [(TypeRep,[Law alg '[]])]
+-- allLaws = listLaws (Proxy::Proxy (AncestorClasses '(alg,'[])))
+
+--------------------
+
+-- embedLaw :: View alg1 t1 alg2 t2 => Law alg1 t1 -> Law alg2 t2
+-- embedLaw law = law
+--     { lhs = embedExpr $ lhs law
+--     , rhs = embedExpr $ rhs law
+--     }
+--
+-- embedLaws :: View alg1 t1 alg2 t2 => [Law alg1 t1] -> [Law alg2 t2]
+-- embedLaws = map embedLaw
+
+--------------------------------------------------------------------------------
+
+-- printAllLaws :: forall alg.
+--     ( Variety alg
+--     , Show (Expr alg Var)
+--     ) => IO ()
+-- printAllLaws = do
+--     forM (allLaws @alg) $ \(t,laws) -> do
+--         putStrLn $ show t
+--         forM laws $ \law -> do
+--             printLaw law
+--
+--     putStrLn $ show $ typeRep (Proxy::Proxy alg)
+--     printLaws (Proxy::Proxy alg)
+--     putStrLn ""
+
+printLaws :: forall alg.
+    ( Variety alg
+    , Show (Expr alg '[] Var)
+    ) => Proxy alg -> IO ()
+printLaws palg = do
+    forM_ (laws::[Law alg '[]]) printLaw
+
+printLaw :: Show (Expr alg t Var) => Law alg t -> IO ()
+printLaw law = do
+    putStrLn $ "  "++lawName law++":"
+    putStrLn $ "    lhs: "++show (lhs law)
+    putStrLn $ "    rhs: "++show (rhs law)
+
+----------------------------------------
+
+type Testable a = (Eq a, Arbitrary a, Typeable a)
+
+-- subVars :: (Functor (Sig alg t), FAlgebra alg) => Expr alg t Var -> [(Var,a)] -> Expr alg t a
+-- subVars expr varmap = fmap go expr
+--     where
+--         go var = case lookup var varmap of
+--             Just a -> a
+--
+-- law2quickcheck :: forall (a::Type) alg t.
+--     ( FAlgebra alg
+--     , alg a
+--     , Testable a
+--     ) => Proxy a -> Law alg t -> TestTree
+-- law2quickcheck p law = QC.testProperty (lawName law) $ do
+--     as <- infiniteListOf (arbitrary::Gen a)
+--     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
+--     return $ (eval $ subVars (lhs law) varmap)
+--           == (eval $ subVars (rhs law) varmap)
 
 --------------------------------------------------------------------------------
 

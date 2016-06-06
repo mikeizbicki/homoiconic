@@ -15,6 +15,14 @@ import Data.Proxy
 import qualified Prelude as P
 -- import GHC.Exts
 
+import Test.Tasty
+import Test.Tasty.Ingredients.Basic
+import Test.Tasty.Options
+import Test.Tasty.Runners
+import qualified Test.Tasty.SmallCheck as SC
+import qualified Test.Tasty.QuickCheck as QC
+import Test.QuickCheck hiding (Testable)
+
 import FAlgebra
 -- import FAlgebra98
 -- import Topology
@@ -29,6 +37,28 @@ class Poset a where
 
 mkFAlgebra ''Poset
 
+instance cxt '[] => FunctorTag cxt (Sig Poset) where
+    fmapTag f (Sig_inf e1 e2) = Sig_inf
+        (apHaskTag (Proxy::Proxy '[]) f e1)
+        (apHaskTag (Proxy::Proxy '[]) f e2)
+
+type instance ParentClasses '(Poset,t) = '[]
+
+instance Variety Poset where
+    laws =
+        [ Law
+            { lawName = "commutative"
+            , lhs = inf var1 var2
+            , rhs = inf var2 var1
+            }
+        , Law
+            { lawName = "associative"
+            , lhs = (var1 `inf`  var2) `inf` var3
+            , rhs =  var1 `inf` (var2  `inf` var3)
+            }
+        ]
+
+{-
 #define mkPoset(x) \
 instance Poset x where inf = P.min
 
@@ -50,6 +80,23 @@ class Poset a => LowerBounded a where
 
 mkFAlgebra ''LowerBounded
 
+instance FunctorTag (Sig LowerBounded) where
+    fmapTag f (Sig_LowerBounded_Poset_ s) = Sig_LowerBounded_Poset_ $ fmapTag f s
+    fmapTag f (Sig_minBound) = Sig_minBound
+
+type instance ParentClasses '(LowerBounded,t) =
+    '[ '(Poset,t)
+     ]
+
+instance Variety LowerBounded where
+    laws =
+        [ Law
+            { lawName = "minBound"
+            , lhs = inf minBound var1
+            , rhs = minBound
+            }
+        ]
+
 #define mkLowerBounded(x) \
 instance LowerBounded x where minBound = P.minBound
 
@@ -65,65 +112,71 @@ class LowerBounded (Logic a) => Topology a where
     type Logic a
     (==) :: a -> a -> Logic a
 
-mkFAlgebra ''Topology
+-- mkFAlgebra ''Topology
 
--- data TLogic
--- type instance App TLogic a = Logic a
---
--- instance FAlgebra Topology where
---     data Sig Topology t a where
---         Sig_Topology_LowerBounded_Logic
---             :: Sig LowerBounded ttt a
---             -> Sig Topology (ttt `Snoc` TLogic) a
---         Sig_eq :: a -> a -> Sig Topology '[TLogic] a
---
---     runSig (p::proxy a) (Sig_Topology_LowerBounded_Logic s)
---         = runSigSnoc (Proxy::Proxy TLogic) (Proxy::Proxy a) s
---
---     runSigTag
---         (p::proxy a)
---         (Sig_Topology_LowerBounded_Logic
---             s::Sig Topology (s:t) (App t a)
---         )
---         = runSigTagSnoc
---             (Proxy::Proxy TLogic)
---             (Proxy::Proxy s)
---             (Proxy::Proxy t)
---             (Proxy::Proxy a)
---             s
---     runSigTag p (Sig_eq e1 e2) = e1==e2
---
---     mape f (Sig_Topology_LowerBounded_Logic s) = Sig_Topology_LowerBounded_Logic $ mape f s
---     mape f (Sig_eq a1 a2) = Sig_eq (f a1) (f a2)
---
--- instance
---     ( View Topology '[TLogic] alg (TLogic ': t)
---     , View LowerBounded '[] alg (TLogic ': t)
---     , View Poset '[] alg (TLogic ': t)
---     , TypeConstraints t a
---     ) => Topology (Free (Sig alg) t a)
---         where
---     type Logic (Free (Sig alg) t a) = Free (Sig alg) (TLogic ': t) a
---     (==) e1 e2 = FreeTag $ embedSig $ Sig_eq e1 e2
---
--- instance View LowerBounded '[] Topology '[TLogic] where
---     embedSig s = Sig_Topology_LowerBounded_Logic s
---     unsafeExtractSig (Sig_Topology_LowerBounded_Logic s)
---         = unsafeCoerceSigTag (Proxy::Proxy '[]) s
--- instance View Poset '[] Topology '[TLogic] where
---     embedSig (s :: Sig Poset '[] a)
---         = Sig_Topology_LowerBounded_Logic (embedSig s :: Sig LowerBounded '[] a)
---     unsafeExtractSig (Sig_Topology_LowerBounded_Logic s)
---         = unsafeExtractSig (unsafeCoerceSigTag (Proxy::Proxy '[]) s)
---
--- instance
---     ( Show a
---     ) => Show (Sig Topology t a) where
---     show (Sig_Topology_LowerBounded_Logic s) = show s
---     show (Sig_eq e1 e2) = show e1++"=="++show e2
---
--- instance {-#OVERLAPS#-} Show (Sig Topology (t0 ': t1 ': t2 ': t3 ': t4 ': '[]) a) where
---     show _ = "<overflow>"
+data TLogic
+type instance App TLogic a = Logic a
+
+instance FAlgebra Topology where
+    data Sig Topology t a where
+        Sig_Topology_LowerBounded_Logic
+            :: Sig LowerBounded ttt a
+            -> Sig Topology (ttt `Snoc` TLogic) a
+        Sig_eq :: a -> a -> Sig Topology '[TLogic] a
+
+    runSig (p::proxy a) (Sig_Topology_LowerBounded_Logic s)
+        = runSigSnoc (Proxy::Proxy TLogic) (Proxy::Proxy a) s
+
+    runSigTag
+        (p::proxy a)
+        (Sig_Topology_LowerBounded_Logic
+            s::Sig Topology (s:t) (App t a)
+        )
+        = runSigTagSnoc
+            (Proxy::Proxy TLogic)
+            (Proxy::Proxy s)
+            (Proxy::Proxy t)
+            (Proxy::Proxy a)
+            s
+    runSigTag p (Sig_eq e1 e2) = e1==e2
+
+    mape f (Sig_Topology_LowerBounded_Logic s) = Sig_Topology_LowerBounded_Logic $ mape f s
+    mape f (Sig_eq a1 a2) = Sig_eq (f a1) (f a2)
+
+instance FunctorTag (Sig Topology) where
+    fmapTag f (Sig_Topology_LowerBounded_Logic s) = Sig_Topology_LowerBounded_Logic $ fmapTag f s
+    fmapTag f (Sig_eq e1 e2) = Sig_eq
+        (apHaskTag (Proxy::Proxy '[]) f e1)
+        (apHaskTag (Proxy::Proxy '[]) f e2)
+
+instance
+    ( View Topology '[TLogic] alg (TLogic ': t)
+    , View LowerBounded '[] alg (TLogic ': t)
+    , View Poset '[] alg (TLogic ': t)
+    , TypeConstraints t a
+    ) => Topology (Free (Sig alg) t a)
+        where
+    type Logic (Free (Sig alg) t a) = Free (Sig alg) (TLogic ': t) a
+    (==) e1 e2 = FreeTag $ embedSig $ Sig_eq e1 e2
+
+instance View LowerBounded '[] Topology '[TLogic] where
+    embedSig s = Sig_Topology_LowerBounded_Logic s
+    unsafeExtractSig (Sig_Topology_LowerBounded_Logic s)
+        = unsafeCoerceSigTag (Proxy::Proxy '[]) s
+instance View Poset '[] Topology '[TLogic] where
+    embedSig (s :: Sig Poset '[] a)
+        = Sig_Topology_LowerBounded_Logic (embedSig s :: Sig LowerBounded '[] a)
+    unsafeExtractSig (Sig_Topology_LowerBounded_Logic s)
+        = unsafeExtractSig (unsafeCoerceSigTag (Proxy::Proxy '[]) s)
+
+instance
+    ( Show a
+    ) => Show (Sig Topology t a) where
+    show (Sig_Topology_LowerBounded_Logic s) = show s
+    show (Sig_eq e1 e2) = show e1++"=="++show e2
+
+instance {-#OVERLAPS#-} Show (Sig Topology (t0 ': t1 ': t2 ': t3 ': t4 ': '[]) a) where
+    show _ = "<overflow>"
 
 instance Topology Bool where
     type Logic Bool = Bool
@@ -143,6 +196,12 @@ class Topology a => Semigroup a where
     (+) :: a -> a -> a
 
 mkFAlgebra ''Semigroup
+
+instance FunctorTag (Sig Semigroup) where
+    fmapTag f (Sig_Semigroup_Topology_ s) = Sig_Semigroup_Topology_ $ fmapTag f s
+    fmapTag f (Sig_plus e1 e2) = Sig_plus
+        (apHaskTag (Proxy::Proxy '[]) f e1)
+        (apHaskTag (Proxy::Proxy '[]) f e2)
 
 -- instance FAlgebra Semigroup where
 --     data Sig Semigroup t a where
@@ -208,6 +267,10 @@ class Semigroup a => Monoid a where
 
 mkFAlgebra ''Monoid
 
+instance FunctorTag (Sig Monoid) where
+    fmapTag f (Sig_Monoid_Semigroup_ s) = Sig_Monoid_Semigroup_ $ fmapTag f s
+    fmapTag f (Sig_zero) = Sig_zero
+
 -- instance View Topology '[TLogic] Monoid '[TLogic] where
 --     embedSig (s :: Sig Topology '[TLogic] a)
 --         = Sig_Monoid_Semigroup_ (embedSig s :: Sig Semigroup '[TLogic] a)
@@ -231,6 +294,13 @@ class (Monoid a, Monoid (Scalar a)) => Module a where
     (.*) :: Scalar a -> a -> a
 
 mkFAlgebra ''Module
+
+instance FunctorTag (Sig Module) where
+    fmapTag f (Sig_Module_Monoid_ s) = Sig_Module_Monoid_ $ fmapTag f s
+    fmapTag f (Sig_Module_Monoid_Scalar_ s) = Sig_Module_Monoid_Scalar_ $ fmapTag f s
+    fmapTag f (Sig_dotmul e1 e2) = Sig_dotmul
+        (apHaskTag (Proxy::Proxy '[TScalar]) f e1)
+        (apHaskTag (Proxy::Proxy '[]       ) f e2)
 
 -- instance FAlgebra Module where
 --     data Sig Module t a where
@@ -340,6 +410,12 @@ class Module a => Hilbert a where
 
 mkFAlgebra ''Hilbert
 
+instance FunctorTag (Sig Hilbert) where
+    fmapTag f (Sig_Hilbert_Module_ s) = Sig_Hilbert_Module_ $ fmapTag f s
+    fmapTag f (Sig_ltgt e1 e2) = Sig_ltgt
+        (apHaskTag (Proxy::Proxy '[]) f e1)
+        (apHaskTag (Proxy::Proxy '[]) f e2)
+
 -- instance FAlgebra Hilbert where
 --     data Sig Hilbert t a where
 --         Sig_Hilbert_Module_ :: Sig Module t a -> Sig Hilbert t a
@@ -420,6 +496,11 @@ class (Hilbert a, Hilbert (Floo a)) => Floobert a where
 
 mkFAlgebra ''Floobert
 
+instance FunctorTag (Sig Floobert) where
+    fmapTag f (Sig_Floobert_Hilbert_ s) = Sig_Floobert_Hilbert_ $ fmapTag f s
+    fmapTag f (Sig_floo e1) = Sig_floo
+        (apHaskTag (Proxy::Proxy '[]) f e1)
+
 -- data TFloo
 --
 -- instance FAlgebra Floobert where
@@ -492,4 +573,4 @@ z :: Free (Sig Space) '[TFloo] (Int,Int)
 z = Pure 2
 
 type instance TypeConstraints t a = ()
-
+-}

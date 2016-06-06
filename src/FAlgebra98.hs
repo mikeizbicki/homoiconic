@@ -3,6 +3,18 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE NoRebindableSyntax #-}
 {-# LANGUAGE TypeInType #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
@@ -10,17 +22,17 @@ module FAlgebra98
     (
 
     -- * FAlgebra
-      FAlgebra98 (..)
-    , Free98 (..)
-    , Expr98
-    , eval98
-    , View98 (..)
+      FAlgebra (..)
+    , Free (..)
+    , AST
+    , runHomAST
+    , View (..)
 
     -- ** Template Haskell
-    , mkFAlgebra98
+    , mkFAlgebra
 
     -- * Variety
-    , Variety98 (..)
+    , Variety (..)
     , Law (..)
     , allLaws
     , subVars
@@ -37,6 +49,7 @@ module FAlgebra98
 
     -- ** Variables for generating laws
     , Var
+    , mkExprVar
     , var1
     , var2
     , var3
@@ -47,7 +60,7 @@ module FAlgebra98
     , printLaw
 
     -- ** Evaluating laws
-    , Testable98
+    , Testable
     , runTests
     , runAllTests
 
@@ -84,56 +97,56 @@ import Debug.Trace
 class (alg1 a, alg2 a) => And (alg1 :: Type -> Constraint) (alg2 :: Type -> Constraint) (a:: Type)
 instance (alg1 a, alg2 a) => And alg1 alg2 a
 
-instance (FAlgebra98 alg1, FAlgebra98 alg2) => FAlgebra98 (And alg1 alg2) where
+instance (FAlgebra alg1, FAlgebra alg2) => FAlgebra (And alg1 alg2) where
     type ParentClasses (And alg1 alg2) = ParentClasses alg1++ParentClasses alg2
-    data Sig98 (And alg1 alg2) a where
-        Sig98_And_alg1 :: Sig98 alg1 a -> Sig98 (And alg1 alg2) a
-        Sig98_And_alg2 :: Sig98 alg2 a -> Sig98 (And alg1 alg2) a
-    runSig98 (Sig98_And_alg1 s) = runSig98 s
-    runSig98 (Sig98_And_alg2 s) = runSig98 s
+    data Sig (And alg1 alg2) a where
+        Sig_And_alg1 :: Sig alg1 a -> Sig (And alg1 alg2) a
+        Sig_And_alg2 :: Sig alg2 a -> Sig (And alg1 alg2) a
+    runSig (Sig_And_alg1 s) = runSig s
+    runSig (Sig_And_alg2 s) = runSig s
 
-instance (Functor (Sig98 alg1), Functor (Sig98 alg2)) => Functor (Sig98 (And alg1 alg2)) where
-    fmap f (Sig98_And_alg1 s) = Sig98_And_alg1 (fmap f s)
-    fmap f (Sig98_And_alg2 s) = Sig98_And_alg2 (fmap f s)
+instance (Functor (Sig alg1), Functor (Sig alg2)) => Functor (Sig (And alg1 alg2)) where
+    fmap f (Sig_And_alg1 s) = Sig_And_alg1 (fmap f s)
+    fmap f (Sig_And_alg2 s) = Sig_And_alg2 (fmap f s)
 
-instance (Foldable (Sig98 alg1), Foldable (Sig98 alg2)) => Foldable (Sig98 (And alg1 alg2)) where
-    foldr f b (Sig98_And_alg1 s) = foldr f b s
-    foldr f b (Sig98_And_alg2 s) = foldr f b s
+instance (Foldable (Sig alg1), Foldable (Sig alg2)) => Foldable (Sig (And alg1 alg2)) where
+    foldr f b (Sig_And_alg1 s) = foldr f b s
+    foldr f b (Sig_And_alg2 s) = foldr f b s
 
 instance
-    ( Variety98 alg1
-    , Variety98 alg2
+    ( Variety alg1
+    , Variety alg2
     , ListLaws (And alg1 alg2) (AncestorClasses (And alg1 alg2))
-    ) => Variety98 (And alg1 alg2) where
+    ) => Variety (And alg1 alg2) where
     laws=[]
 
 -- NOTE:
 -- We can't actually make expressions that use both alg1 and alg2 because of this class instance.
 -- We need overlapping instances based on differing class constraints,
 -- which isn't implemented in GHC.
-instance (FAlgebra98 alg2, View98 alg' alg1) => View98 alg' (And alg1 alg2) where
-    embedSig = Sig98_And_alg1 . embedSig
-    unsafeExtractSig (Sig98_And_alg1 s) = unsafeExtractSig s
+instance (FAlgebra alg2, View alg' alg1) => View alg' (And alg1 alg2) where
+    embedSig = Sig_And_alg1 . embedSig
+    unsafeExtractSig (Sig_And_alg1 s) = unsafeExtractSig s
 
 instance
-    ( Show (Sig98 alg1 a)
-    , Show (Sig98 alg2 a)
-    ) => Show (Sig98 (And alg1 alg2) a)
+    ( Show (Sig alg1 a)
+    , Show (Sig alg2 a)
+    ) => Show (Sig (And alg1 alg2) a)
         where
-    show (Sig98_And_alg1 s) = show s
-    show (Sig98_And_alg2 s) = show s
+    show (Sig_And_alg1 s) = show s
+    show (Sig_And_alg2 s) = show s
 
 --------------------------------------------------------------------------------
 
 class
-    ( Functor (Sig98 alg)
-    , Foldable (Sig98 alg)
+    ( Functor (Sig alg)
+    , Foldable (Sig alg)
     , Typeable alg
-    ) => FAlgebra98 (alg :: Type -> Constraint)
+    ) => FAlgebra (alg :: Type -> Constraint)
         where
     type ParentClasses alg :: [Type -> Constraint]
-    data Sig98 alg a
-    runSig98 :: alg a => Sig98 alg a -> a
+    data Sig alg a
+    runSig :: alg a => Sig alg a -> a
 
 ----------------------------------------
 
@@ -160,58 +173,61 @@ type family Remove x xs where
 
 ----------------------------------------
 
-data Free98 (f :: Type -> Type) (a :: Type) where
-    Free98 :: f (Free98 f a) -> Free98 f a
-    Pure98 :: a -> Free98 f a
+data Free (f :: Type -> Type) (a :: Type) where
+    Free :: f (Free f a) -> Free f a
+    Pure :: a -> Free f a
 
-instance (Show a, Show (f (Free98 f a))) => Show (Free98 f a) where
-    show (Pure98 a) = show a
-    show (Free98 f) = "("++show f++")"
+deriving instance (Eq a, Eq (f (Free f a))) => Eq (Free f a)
 
-instance Functor f => Functor (Free98 f) where
-    fmap g (Free98 f) = Free98 (fmap (fmap g) f)
-    fmap g (Pure98 a) = Pure98 (g a)
+instance (Show a, Show (f (Free f a))) => Show (Free f a) where
+    show (Pure a) = show a
+    show (Free f) = "("++show f++")"
 
-instance (Functor f, Foldable f) => Foldable (Free98 f) where
-    foldMap f (Free98 fa) = fold $ fmap (foldMap f) fa
-    foldMap f (Pure98  a) = f a
+instance Functor f => Functor (Free f) where
+    fmap g (Free f) = Free (fmap (fmap g) f)
+    fmap g (Pure a) = Pure (g a)
 
-type Expr98 (alg :: Type -> Constraint) a = Free98 (Sig98 alg) a
+instance (Functor f, Foldable f) => Foldable (Free f) where
+    foldMap f (Free fa) = fold $ fmap (foldMap f) fa
+    foldMap f (Pure  a) = f a
 
-eval98 :: (FAlgebra98 alg, alg a) => Expr98 alg a -> a
-eval98 (Pure98 a) = a
-eval98 (Free98 f) = runSig98 (Prelude.fmap eval98 f)
+type AST (alg :: Type -> Constraint) a = Free (Sig alg) a
 
-class (FAlgebra98 alg1, FAlgebra98 alg2) => View98 alg1 alg2 where
-    embedSig         :: Sig98 alg1 a -> Sig98 alg2 a
-    unsafeExtractSig :: Sig98 alg2 a -> Sig98 alg1 a
+{-# INLINABLE runHomAST #-}
+runHomAST :: (FAlgebra alg, alg a) => AST alg a -> a
+runHomAST (Pure a) = a
+runHomAST (Free f) = runSig (fmap runHomAST f)
 
-instance FAlgebra98 alg => View98 alg alg where
+class (FAlgebra alg1, FAlgebra alg2) => View alg1 alg2 where
+    embedSig         :: Sig alg1 a -> Sig alg2 a
+    unsafeExtractSig :: Sig alg2 a -> Sig alg1 a
+
+instance FAlgebra alg => View alg alg where
     embedSig = id
     unsafeExtractSig = id
 
-embedExpr98 :: View98 alg1 alg2 => Expr98 alg1 a -> Expr98 alg2 a
-embedExpr98 (Free98 f) = Free98 $ embedSig $ fmap embedExpr98 f
-embedExpr98 (Pure98 a) = Pure98 a
+embedHomAST :: View alg1 alg2 => AST alg1 a -> AST alg2 a
+embedHomAST (Free f) = Free $ embedSig $ fmap embedHomAST f
+embedHomAST (Pure a) = Pure a
 
-embedLaw :: View98 alg1 alg2 => Law alg1 -> Law alg2
+embedLaw :: View alg1 alg2 => Law alg1 -> Law alg2
 embedLaw law = law
-    { lhs = embedExpr98 $ lhs law
-    , rhs = embedExpr98 $ rhs law
+    { lhs = embedHomAST $ lhs law
+    , rhs = embedHomAST $ rhs law
     }
 
-embedLaws :: View98 alg1 alg2 => [Law alg1] -> [Law alg2]
+embedLaws :: View alg1 alg2 => [Law alg1] -> [Law alg2]
 embedLaws = map embedLaw
 
 ----------------------------------------
 
 data Law alg = Law
     { lawName :: String
-    , lhs :: Expr98 alg Var
-    , rhs :: Expr98 alg Var
+    , lhs :: AST alg Var
+    , rhs :: AST alg Var
     }
 
-deriving instance Show (Expr98 alg Var) => Show (Law alg)
+deriving instance Show (AST alg Var) => Show (Law alg)
 
 newtype Var = Var String
     deriving (Eq)
@@ -219,20 +235,23 @@ newtype Var = Var String
 instance Show Var where
     show (Var v) = v
 
-var1 :: Expr98 alg Var
-var1 = Pure98 $ Var "var1"
+mkExprVar :: String -> AST alg Var
+mkExprVar str = Pure $ Var str
 
-var2 :: Expr98 alg Var
-var2 = Pure98 $ Var "var2"
+var1 :: AST alg Var
+var1 = Pure $ Var "var1"
 
-var3 :: Expr98 alg Var
-var3 = Pure98 $ Var "var3"
+var2 :: AST alg Var
+var2 = Pure $ Var "var2"
+
+var3 :: AST alg Var
+var3 = Pure $ Var "var3"
 
 --------------------
 
-type Op0 alg = Expr98 alg Var
-type Op1 alg = Expr98 alg Var -> Expr98 alg Var
-type Op2 alg = Expr98 alg Var -> Expr98 alg Var -> Expr98 alg Var
+type Op0 alg = AST alg Var
+type Op1 alg = AST alg Var -> AST alg Var
+type Op2 alg = AST alg Var -> AST alg Var -> AST alg Var
 
 commutative :: Op2 alg -> Law alg
 commutative f = Law
@@ -271,19 +290,19 @@ identity_right f0 f2 = Law
 
 --------------------
 
-class (FAlgebra98 alg, ListLaws alg (AncestorClasses alg)) => Variety98 alg where
+class (FAlgebra alg, ListLaws alg (AncestorClasses alg)) => Variety alg where
     laws :: [Law alg]
 
-class Variety98 alg => ListLaws alg (xs::[Type -> Constraint]) where
+class Variety alg => ListLaws alg (xs::[Type -> Constraint]) where
     listLaws :: Proxy xs -> [(TypeRep,[Law alg])]
 
-instance Variety98 alg => ListLaws alg '[] where
+instance Variety alg => ListLaws alg '[] where
     listLaws _ = []
 
 instance
-    ( Variety98 alg
-    , Variety98 x
-    , View98 x alg
+    ( Variety alg
+    , Variety x
+    , View x alg
     , ListLaws alg xs
     ) => ListLaws alg (x ': xs)
         where
@@ -297,8 +316,8 @@ allLaws = listLaws (Proxy::Proxy (AncestorClasses alg))
 --------------------------------------------------------------------------------
 
 printAllLaws :: forall alg.
-    ( Variety98 alg
-    , Show (Expr98 alg Var)
+    ( Variety alg
+    , Show (AST alg Var)
     ) => IO ()
 printAllLaws = do
     forM (allLaws @alg) $ \(t,laws) -> do
@@ -311,13 +330,13 @@ printAllLaws = do
     putStrLn ""
 
 printLaws :: forall alg.
-    ( Variety98 alg
-    , Show (Expr98 alg Var)
+    ( Variety alg
+    , Show (AST alg Var)
     ) => Proxy alg -> IO ()
 printLaws palg = do
     forM_ (laws::[Law alg]) printLaw
 
-printLaw :: Show (Expr98 alg Var) => Law alg -> IO ()
+printLaw :: Show (AST alg Var) => Law alg -> IO ()
 printLaw law = do
     putStrLn $ "  "++lawName law++":"
     putStrLn $ "    lhs: "++show (lhs law)
@@ -325,38 +344,38 @@ printLaw law = do
 
 ----------------------------------------
 
-type Testable98 a = (Eq a, Arbitrary a, Typeable a)
+type Testable a = (Eq a, Arbitrary a, Typeable a)
 
-subVars :: FAlgebra98 alg => Expr98 alg Var -> [(Var,a)] -> Expr98 alg a
+subVars :: FAlgebra alg => AST alg Var -> [(Var,a)] -> AST alg a
 subVars expr varmap = fmap go expr
     where
         go var = case lookup var varmap of
             Just a -> a
 
 law2quickcheck :: forall (a :: Type) alg.
-    ( FAlgebra98 alg
+    ( FAlgebra alg
     , alg a
-    , Testable98 a
+    , Testable a
     ) => Proxy a -> Law alg -> TestTree
 law2quickcheck p law = QC.testProperty (lawName law) $ do
     as <- infiniteListOf (arbitrary::Gen a)
     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
-    return $ (eval98 $ subVars (lhs law) varmap)
-          == (eval98 $ subVars (rhs law) varmap)
+    return $ (runHomAST $ subVars (lhs law) varmap)
+          == (runHomAST $ subVars (rhs law) varmap)
 
 class2tasty :: forall alg a.
-    ( Variety98 alg
+    ( Variety alg
     , alg a
-    , Testable98 a
+    , Testable a
     ) => Proxy alg -> Proxy a -> TestTree
 class2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " on " ++ show (typeRep pa) )
     $ map (law2quickcheck pa) (laws::[Law alg])
 
 superclasses2tasty :: forall alg a.
-    ( Variety98 alg
+    ( Variety alg
     , alg a
-    , Testable98 a
+    , Testable a
     ) => Proxy alg -> Proxy a -> TestTree
 superclasses2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " (and superclasses) on " ++ show (typeRep pa) )
@@ -369,16 +388,16 @@ superclasses2tasty palg pa = testGroup
     ]
 
 runTests :: forall alg a.
-    ( Variety98 alg
+    ( Variety alg
     , alg a
-    , Testable98 a
+    , Testable a
     ) => IO ()
 runTests = runTasty (class2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
 
 runAllTests :: forall alg a.
-    ( Variety98 alg
+    ( Variety alg
     , alg a
-    , Testable98 a
+    , Testable a
     ) => IO ()
 runAllTests = runTasty (superclasses2tasty (Proxy::Proxy alg) (Proxy::Proxy a))
 
@@ -392,17 +411,24 @@ runTasty tt = do
 --------------------------------------------------------------------------------
 -- template haskell functions
 
--- | Constructs instances for FAlgebra98 and related classes.
-mkFAlgebra98 :: Name -> Q [Dec]
-mkFAlgebra98 algName = do
+-- | Constructs instances for FAlgebra and related classes.
+mkFAlgebra :: Name -> Q [Dec]
+mkFAlgebra algName = do
 
     -- validate input and extract the class functions
     qinfo <- reify algName
-    decs <- case qinfo of
+    rawdecs <- case qinfo of
         ClassI (ClassD cxt _ [_] _ decs) _ -> return decs
         _ -> error $ "mkFAlgebra called on "
             ++show algName
             ++", which is not a class of kind `Type -> Constraint`"
+
+    -- remove functions from decsraw that we can't handle
+    let go x = case x of
+            SigD _ sigType -> if not $ isVarT $ getReturnType sigType
+                then False
+                else True -- and $ map isVarT $ getArgs sigType
+    let decs = filter go rawdecs
 
     -- common variables we'll need later
     let varName = mkName "a"
@@ -415,29 +441,31 @@ mkFAlgebra98 algName = do
             Nothing
             []
             ( AppT
-                ( ConT $ mkName "FAlgebra98" )
+                ( ConT $ mkName "FAlgebra" )
                 ( ConT $ algName)
             )
             [ DataInstD
                 []
-                ( mkName "Sig98" )
+                ( mkName "Sig" )
                 [ ConT algName, VarT varName ]
                 Nothing
                 (
                     -- create a constructor for each member function
                     [ NormalC
-                        ( mkName $ "Sig98_" ++ renameClassMethod sigName )
-                        ( map (Bang NoSourceUnpackedness NoSourceStrictness,) (getArgs $ subForall varName sigType) )
+                        ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                        ( map
+                            (Bang NoSourceUnpackedness NoSourceStrictness,)
+                            (getArgs $ subForall varName sigType) )
                         | SigD sigName sigType <- decs
                     ]
                     ++
                     -- create a constructor for each parent class to hold their signatures
                     [ NormalC
-                        ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass)
+                        ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass)
                         [ ( Bang SourceUnpack SourceStrict
                           , AppT
                             ( AppT
-                                ( ConT $ mkName "Sig98" )
+                                ( ConT $ mkName "Sig" )
                                 ( ConT parentClass )
                             )
                             ( VarT varName )
@@ -449,14 +477,18 @@ mkFAlgebra98 algName = do
                 []
 
             , FunD
-                ( mkName "runSig98" )
+                ( mkName "runSig" )
                 (
                     -- evaluate functions
-                    [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
-                      in Clause
-                        [ ConP ( mkName $ "Sig98_" ++ renameClassMethod sigName ) args
+                    [ Clause
+                        [ ConP
+                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                            ( map VarP $ genericArgs sigType )
                         ]
-                        ( NormalB $ foldl AppE (VarE sigName) $ map (\(VarP n)->VarE n) args )
+                        ( NormalB $ foldl AppE
+                            ( VarE sigName )
+                            ( map VarE $ genericArgs sigType )
+                        )
                         []
                         | SigD sigName sigType <- decs
                     ]
@@ -464,15 +496,25 @@ mkFAlgebra98 algName = do
                     -- evaluate nested constructors
                     [ Clause
                         [ ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             [ VarP $ mkName $ "s" ]
                         ]
                         ( NormalB $ AppE
-                            ( VarE $ mkName "runSig98" )
+                            ( VarE $ mkName "runSig" )
                             ( VarE $ mkName "s" )
                         )
                         []
                         | parentClass <- parentClasses
+                    ]
+                    ++
+                    -- ensure that there's always at least one clause
+                    [ Clause
+                        [ VarP $ mkName "_" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "runSig called on "++nameBase algName++" which has no homogeneous class methods" )
+                        )
+                        []
                     ]
                 )
 
@@ -484,14 +526,31 @@ mkFAlgebra98 algName = do
                 )
             ]
 
-    -- construct the `Functor (Sig98 alg)` instance
+    -- deriving instance (Eq a) => Eq (Sig alg a)
+    let instEqSig = StandaloneDerivD
+            [ AppT
+                ( ConT $ mkName "Eq" )
+                ( VarT $ mkName "a" )
+            ]
+            ( AppT
+                ( ConT $ mkName "Eq" )
+                ( AppT
+                    ( AppT
+                        ( ConT $ mkName "Sig" )
+                        ( ConT $ algName )
+                    )
+                    ( VarT $ mkName "a" )
+                )
+            )
+
+    -- construct the `Functor (Sig alg)` instance
     let instFunctor = InstanceD
             Nothing
             []
             ( AppT
                 ( ConT $ mkName "Functor")
                 ( AppT
-                    ( ConT $ mkName "Sig98" )
+                    ( ConT $ mkName "Sig" )
                     ( ConT $ algName )
                 )
             )
@@ -499,16 +558,19 @@ mkFAlgebra98 algName = do
                 ( mkName "fmap" )
                 (
                     -- map over constructors for member functions
-                    [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
-                      in Clause
+                    [ Clause
                         [ VarP $ mkName "f"
-                        , ConP ( mkName $ "Sig98_" ++ renameClassMethod sigName ) args
+                        , ConP
+                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                            ( map VarP $ genericArgs sigType )
                         ]
-                        ( NormalB $ foldl AppE (ConE (mkName $ "Sig98_" ++ renameClassMethod sigName))
-                            [ AppE
-                                ( VarE $ mkName "f" )
-                                ( VarE $ n )
-                            | VarP n <- args
+                        ( NormalB $ foldl AppE (ConE (mkName $ "Sig_" ++ renameClassMethod sigName))
+                            [ if isVarT argType
+                                then AppE
+                                    ( VarE $ mkName "f" )
+                                    ( VarE $ argName )
+                                else VarE argName
+                            | (argName,argType) <- zip (genericArgs sigType) (getArgs sigType)
                             ]
                         )
                         []
@@ -519,11 +581,11 @@ mkFAlgebra98 algName = do
                     [ Clause
                         [ VarP $ mkName "f"
                         , ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             [ VarP $ mkName "s" ]
                         ]
                         ( NormalB $ AppE
-                            ( ConE $ mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( ConE $ mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             ( AppE
                                 ( AppE
                                     ( VarE $ mkName "fmap" )
@@ -535,17 +597,27 @@ mkFAlgebra98 algName = do
                         []
                         | parentClass <- parentClasses
                     ]
+                    ++
+                    -- ensure that there's always at least one clause
+                    [ Clause
+                        [ VarP $ mkName "f", VarP $ mkName "a" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "fmap called on Sig "++nameBase algName++" which has no homogeneous class methods" )
+                        )
+                        []
+                    ]
                 )
             ]
 
-    -- construct the `Foldable (Sig98 alg)` instance
+    -- construct the `Foldable (Sig alg)` instance
     let instFoldable = InstanceD
             Nothing
             []
             ( AppT
                 ( ConT $ mkName "Foldable" )
                 ( AppT
-                    ( ConT $ mkName "Sig98" )
+                    ( ConT $ mkName "Sig" )
                     ( ConT algName )
                 )
             )
@@ -553,11 +625,12 @@ mkFAlgebra98 algName = do
                 ( mkName "foldr" )
                 (
                     -- fold over constructors for member functions
-                    [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
-                      in Clause
+                    [ Clause
                         [ VarP $ mkName "f"
                         , VarP $ mkName "b"
-                        , ConP ( mkName $ "Sig98_" ++ renameClassMethod sigName ) args
+                        , ConP
+                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                            ( map VarP $ genericArgs sigType )
                         ]
                         ( NormalB $ foldl
                             (\a b -> AppE
@@ -568,7 +641,11 @@ mkFAlgebra98 algName = do
                                 a
                             )
                             ( VarE $ mkName "b" )
-                            ( map (\(VarP n) -> VarE n) $ reverse args )
+                            ( reverse
+                                $ map (VarE . fst)
+                                $ filter (isVarT . snd)
+                                $ zip (genericArgs sigType) (getArgs sigType)
+                            )
                         )
                         []
                         | SigD sigName sigType <- decs
@@ -579,7 +656,7 @@ mkFAlgebra98 algName = do
                         [ VarP $ mkName "f"
                         , VarP $ mkName "b"
                         , ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             [ VarP $ mkName "s" ]
                         ]
                         ( NormalB $ AppE
@@ -595,10 +672,20 @@ mkFAlgebra98 algName = do
                         []
                         | parentClass <- parentClasses
                     ]
+                    ++
+                    -- ensure that there's always at least one clause
+                    [ Clause
+                        [ VarP $ mkName "f", VarP $ mkName "b", VarP $ mkName "ta" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "foldr called on Sig "++nameBase algName++" which has no homogeneous class methods" )
+                        )
+                        []
+                    ]
                 )
             ]
 
-    -- construct the `Show a => Show (Sig98 alg a)` instance
+    -- construct the `Show a => Show (Sig alg a)` instance
     let instShow = InstanceD
             Nothing
             [ AppT
@@ -609,7 +696,7 @@ mkFAlgebra98 algName = do
                 ( ConT $ mkName "Show" )
                 ( AppT
                     ( AppT
-                        ( ConT $ mkName "Sig98" )
+                        ( ConT $ mkName "Sig" )
                         ( ConT algName )
                     )
                     ( VarT $ varName )
@@ -618,9 +705,10 @@ mkFAlgebra98 algName = do
             [ FunD
                 ( mkName "show" )
                 (
+                    -- predicate constructors
                     [ Clause
                         [ ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass)
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass)
                             [ VarP $ mkName "s" ]
                         ]
                         ( NormalB $ AppE
@@ -631,11 +719,11 @@ mkFAlgebra98 algName = do
                         | parentClass <- parentClasses
                     ]
                     ++
-                    [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
-                      in Clause
+                    -- function constructors
+                    [ Clause
                         [ ConP
-                            ( mkName $ "Sig98_" ++ renameClassMethod sigName )
-                            args
+                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                            ( map VarP $ genericArgs sigType )
                         ]
                         ( if isOperator (nameBase sigName)
 
@@ -649,7 +737,7 @@ mkFAlgebra98 algName = do
                                             ( VarE $ mkName "++" )
                                             ( AppE
                                                 ( VarE $ mkName "show" )
-                                                ( VarE $ mkName "e0" )
+                                                ( VarE $ mkName "a0" )
                                             )
                                         )
                                         ( LitE $ StringL $ nameBase sigName )
@@ -657,7 +745,7 @@ mkFAlgebra98 algName = do
                                 )
                                 ( AppE
                                     ( VarE $ mkName "show" )
-                                    ( VarE $ mkName "e1" )
+                                    ( VarE $ mkName "a1" )
                                 )
 
                             -- not an operator means we display the function prefix,
@@ -680,50 +768,91 @@ mkFAlgebra98 algName = do
                                     )
                                 )
                                 ( LitE $ StringL $ nameBase sigName )
-                                ( map (\(VarP n)->VarE n) args )
+                                ( map VarE $ genericArgs sigType )
                         )
                         []
                         | SigD sigName sigType <- decs
                     ]
+                    ++
+                    -- ensure that there's always at least one clause
+                    [ Clause
+                        [ VarP $ mkName "f" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "show called on Sig "++nameBase algName++" which has no homogeneous class methods" )
+                        )
+                        []
+                    ]
                 )
             ]
 
-    -- construct the `View98 alg alg' => alg (Free98 (Sig98 alg') a)` instance
+    -- construct the `View alg alg' => alg (Free (Sig alg') a)` instance
     let algName' = mkName "alg'"
-    let instFree98 = InstanceD
+    let instHomFree = InstanceD
             Nothing
-            [ AppT
-                ( AppT
-                    ( ConT $ mkName "View98" )
-                    ( ConT n )
+            (
+                -- FIXME: this constraint is a hack so that we can make Ord instances
+                ( if nameBase algName=="Ord" || nameBase algName=="FloatingOrd"
+                    then
+                        [ AppT
+                            ( ConT $ mkName "Eq" )
+                            ( VarT $ varName )
+                        , AppT
+                            ( ConT $ mkName "Eq" )
+                            ( AppT
+                                ( AppT
+                                    ( ConT $ mkName "Sig" )
+                                    ( VarT $ mkName "alg'" )
+                                )
+                                ( AppT
+                                    ( AppT
+                                        ( ConT $ mkName "Free" )
+                                        ( AppT
+                                            ( ConT $ mkName "Sig" )
+                                            ( VarT $ mkName "alg'" )
+                                        )
+                                    )
+                                    ( VarT $ mkName "a" )
+                                )
+                            )
+                        ]
+                    else []
                 )
-                ( VarT algName' )
-            | n <- algName:superClasses
-            ]
+                ++
+                -- all the View constraints
+                [ AppT
+                    ( AppT
+                        ( ConT $ mkName "View" )
+                        ( ConT n )
+                    )
+                    ( VarT algName' )
+                | n <- algName:superClasses
+                ]
+            )
             ( AppT
                 ( ConT algName )
                 ( AppT
                     ( AppT
-                        ( ConT $ mkName "Free98" )
+                        ( ConT $ mkName "Free" )
                         ( AppT
-                            ( ConT $ mkName "Sig98" )
+                            ( ConT $ mkName "Sig" )
                             ( VarT algName' )
                         )
                     )
                     ( VarT varName )
                 )
             )
-            [ let args = args2pat sigName $ getArgs $ subForall (mkName "e") sigType
-              in FunD
+            [ FunD
                 sigName
                 [ Clause
-                    args
+                    ( map VarP $ genericArgs sigType )
                     ( NormalB $ AppE
-                        ( ConE $ mkName "Free98" )
+                        ( ConE $ mkName "Free" )
                         ( AppE
                             ( VarE $ mkName "embedSig" )
-                            ( foldl AppE (ConE $ mkName $ "Sig98_"++renameClassMethod sigName)
-                                $ map (\(VarP n)->VarE n) args
+                            ( foldl AppE
+                                ( ConE $ mkName $ "Sig_"++renameClassMethod sigName )
+                                ( map VarE $ genericArgs sigType )
                             )
                         )
                     )
@@ -732,16 +861,16 @@ mkFAlgebra98 algName = do
             | SigD sigName sigType <- decs
             ]
 
-    -- construct the `View98 alg alg'` instances
-    let instView98s =
+    -- construct the `View alg alg'` instances
+    let instHomViews =
 
-            -- parent classes are stored directly in the Sig98 type
+            -- parent classes are stored directly in the Sig type
             [ InstanceD
                 Nothing
                 []
                 ( AppT
                     ( AppT
-                        ( ConT $ mkName "View98" )
+                        ( ConT $ mkName "View" )
                         ( ConT superClass )
                     )
                     ( ConT algName )
@@ -750,14 +879,14 @@ mkFAlgebra98 algName = do
                     ( mkName "embedSig" )
                     [ Clause
                         []
-                        ( NormalB $ ConE $ mkName $ "Sig98_"++nameBase algName++"_"++nameBase superClass )
+                        ( NormalB $ ConE $ mkName $ "Sig_"++nameBase algName++"_"++nameBase superClass )
                         []
                     ]
                 , FunD
                     ( mkName "unsafeExtractSig" )
                     [ Clause
                         [ ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase superClass )
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase superClass )
                             [ VarP $ mkName "s" ]
                         ]
                         ( NormalB $ VarE $ mkName "s" )
@@ -773,7 +902,7 @@ mkFAlgebra98 algName = do
                 []
                 ( AppT
                     ( AppT
-                        ( ConT $ mkName "View98" )
+                        ( ConT $ mkName "View" )
                         ( ConT superClass )
                     )
                     ( ConT algName )
@@ -783,7 +912,7 @@ mkFAlgebra98 algName = do
                     [ Clause
                         [ VarP $ mkName "s" ]
                         ( NormalB $ AppE
-                            ( ConE $ mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( ConE $ mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             ( AppE
                                 ( VarE $ mkName "embedSig" )
                                 ( VarE $ mkName "s" )
@@ -795,7 +924,7 @@ mkFAlgebra98 algName = do
                     ( mkName "unsafeExtractSig" )
                     [ Clause
                         [ ConP
-                            ( mkName $ "Sig98_"++nameBase algName++"_"++nameBase parentClass )
+                            ( mkName $ "Sig_"++nameBase algName++"_"++nameBase parentClass )
                             [ VarP $ mkName "s" ]
                         ]
                         ( NormalB $ AppE
@@ -808,8 +937,43 @@ mkFAlgebra98 algName = do
             | (parentClass,superClass) <- superClassesWithParents
             ]
 
+    -- construct pattern synonyms
+    let patSyns =
+            [ PatSynD
+                ( mkName $ "AST_" ++ renameClassMethod sigName )
+                ( PrefixPatSyn $ genericArgs sigType )
+                ( ExplBidir
+                    [ Clause
+                        ( map VarP $ genericArgs sigType )
+                        ( NormalB $ AppE
+                            ( ConE $ mkName "Free" )
+                            ( AppE
+                                ( VarE $ mkName "embedSig" )
+                                ( foldl
+                                    AppE
+                                    ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
+                                    ( map VarE $ genericArgs sigType )
+                                )
+                            )
+                        )
+                        []
+                    ]
+                )
+                ( ConP
+                    ( mkName "Free" )
+                    [ ViewP
+                        ( VarE $ mkName "unsafeExtractSig" )
+                        ( ConP
+                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                            ( map VarP $ genericArgs sigType )
+                        )
+                    ]
+                )
+            | SigD sigName sigType <- decs
+            ]
+
     -- return the instances
-    return $ [instFAlgebra,instFunctor,instFoldable,instShow,instFree98] ++ instView98s
+    return $ [instFAlgebra,instEqSig,instFunctor,instFoldable,instShow,instHomFree] ++ instHomViews ++ patSyns
 
 --------------------------------------------------------------------------------
 -- utility functions

@@ -1,0 +1,1051 @@
+%-----------------------------------------------------------------------------
+%
+%               Template for sigplanconf LaTeX Class
+%
+% Name:         sigplanconf-template.tex
+%
+% Purpose:      A template for sigplanconf.cls, which is a LaTeX 2e class
+%               file for SIGPLAN conference proceedings.
+%
+% Guide:        Refer to "Author's Guide to the ACM SIGPLAN Class,"
+%               sigplanconf-guide.pdf
+%
+% Author:       Paul C. Anagnostopoulos
+%               Windfall Software
+%               978 371-2316
+%               paul@windfall.com
+%
+% Created:      15 February 2005
+%
+%-----------------------------------------------------------------------------
+
+
+\documentclass[preprint]{sigplanconf}
+
+% The following \documentclass options may be useful:
+
+% preprint      Remove this option only once the paper is in final form.
+% 10pt          To set in 10-point type instead of 9-point.
+% 11pt          To set in 11-point type instead of 9-point.
+% numbers       To obtain numeric citation style instead of author/year.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{amsmath}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{amsthm}
+\makeatletter
+\def\th@definition{%
+  \thm@notefont{}% same as heading font
+  \normalfont % body font
+}
+\makeatother
+\theoremstyle{definition}
+\newtheorem{problem}{Problem}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{courier}
+\usepackage{listings}
+\lstset{
+    language=Haskell,
+    basicstyle=\ttfamily,
+    keywordstyle=\ttfamily,
+    literate={->}{{$\rightarrow$}}2 {>=}{{$\geq$}}2 {<-}{{$\leftarrow$}}2
+             {<=}{{$\leq$}}2 {=>}{{$\Rightarrow$}}2
+    %keywordstyle=\lst@ifdisplaystyle\color{blue}\fi,
+    %commentstyle=\color{gray}
+}
+\lstMakeShortInline|
+
+\newcommand{\cL}{{\cal L}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{filecontents}{paper.bib}
+@article{goldberg1991,
+  title={What every computer scientist should know about floating-point arithmetic},
+  author={Goldberg, David},
+  journal={ACM Computing Surveys (CSUR)},
+  volume={23},
+  number={1},
+  pages={5--48},
+  year={1991},
+  publisher={ACM}
+}
+
+@book{higham2002,
+  title={Accuracy and stability of numerical algorithms},
+  author={Higham, Nicholas J},
+  year={2002},
+  publisher={Siam}
+}
+
+@article{swierstra2008,
+  title={Data types {\`a} la carte},
+  author={Swierstra, Wouter},
+  journal={Journal of functional programming},
+  volume={18},
+  number={04},
+  pages={423--436},
+  year={2008},
+  publisher={Cambridge Univ Press}
+}
+
+@book{hamming2012,
+  title={Numerical methods for scientists and engineers},
+  author={Hamming, Richard},
+  year={2012},
+  publisher={Courier Corporation}
+}
+
+@inproceedings{gupta2015,
+  title={Deep Learning with Limited Numerical Precision},
+  author={Gupta, Suyog and Agrawal, Ankur and Gopalakrishnan, Kailash and Narayanan, Pritish},
+  booktitle={Proceedings of the 32nd International Conference on Machine Learning (ICML-15)},
+  pages={1737--1746},
+  year={2015}
+}
+\end{filecontents}
+\immediate\write18{bibtex paper}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\special{papersize=8.5in,11in}
+\setlength{\pdfpageheight}{\paperheight}
+\setlength{\pdfpagewidth}{\paperwidth}
+
+\conferenceinfo{CONF 'yy}{Month d--d, 20yy, City, ST, Country}
+\copyrightyear{20yy}
+\copyrightdata{978-1-nnnn-nnnn-n/yy/mm}
+\copyrightdoi{nnnnnnn.nnnnnnn}
+
+% Uncomment the publication rights you want to use.
+%\publicationrights{transferred}
+%\publicationrights{licensed}     % this is the default
+%\publicationrights{author-pays}
+
+\titlebanner{Preprint}        % These are ignored unless
+\preprintfooter{Preprint}   % 'preprint' option specified.
+
+%\title{What's the point of homoiconicity?}
+\title{The (floating) point of homoiconicity}
+\subtitle{Functional Pearl}
+
+\authorinfo{Mike Izbicki}
+           {UC Riverside}
+           {mike@izbicki.me}
+%\authorinfo{Name2\and Name3}
+           %{Affiliation2/3}
+           %{Email2/3}
+
+\maketitle
+
+\begin{abstract}
+%This pearl uses Haskell's type classes to enable a limited form of \emph{homoiconicity}.
+%%Specifically, we show how to convert any Haskell98 function that is parametric in its return type into an isomorphic abstract syntax tree.
+%Specifically, we show how to convert a certain set of polymorphic functions into isomorphic abstract syntax trees.
+%But this is really a pearl about the story of numerical programming in Haskell.
+
+%Numeric programming in Haskell sucks.
+%Actually, it sucks in every language because it requires floating point numbers,
+%and floating point arithmetic is so difficult to work with.
+%The goal of this pearl is to make numeric programming suck just a little bit less.
+%This statement is tautologically true---numeric programming requires floating point arithmetic, and working with floats sucks in every language.
+%I think this makes numeric programming in Haskell suck just a little bit less.
+
+Floating point numbers are dangerous.
+Due to their limited precision,
+seemingly correct mathematical formulae can give wildly inaccurate results.
+This pearl uses Haskell's type system to mitigate this danger.
+
+The main observation is that many numerical Haskell functions are \emph{homoiconic}.
+That is, we can easily convert them into isomorphic abstract syntax trees (ASTs).
+The construction does not use template Haskell, and so works at both compile and run time.
+We use these ASTs to solve two problems with floating point numbers:
+\begin{enumerate}
+\item
+We show how to write functions that automatically stabilize (and optimize!) mathematical formulae.
+This lets the programmer write naive floating point code;
+the compiler will worry about improving the numeric stability and speed later.
+\item
+We show how to specify type class laws for floating point numbers that can be easily and automatically tested.
+This is a difficult unsolved problem because floating point numbers do not obey many of the traditional algebraic laws like associativity.
+\end{enumerate}
+We demonstrate these techniques using GHC's builtin numeric hierarchy,
+but these techniques generalize to user defined numeric hierarchies as well.
+
+%First, we show how to convert a certain type of commonly used mathematical function into isomorphic abstract syntax trees.
+%Specifically, we show that a subset of Haskell functions (which we call \emph{homogeneous}) can easily be converted into an isomorphic abstract syntax tree.
+
+%I hate numerical programming in Haskell,
+%but I hate numerical programming in every language.
+%It requires floating point numbers,
+%which
+%
+%I hate floating point numbers.
+
+%This pearl provides a technique that makes working with approximate algebraic structures more convenient.
+%The prototypical example of an approximate structure is floating point arithmetic, which is famously not a semigroup because it is not associative.
+%The technique has two parts.
+%First, it lets us construct an FAlgebra (and hence a syntax tree) for a numerical class hierarchy.
+%Second, we show how to treat topology as an algebraic structure, and that floating point types have a useful topology.
+%This topology can be used to automatically construct properties for approximate algebraic structures that can be easily checked using quickcheck or smallcheck.
+\end{abstract}
+
+\category{CR-number}{subcategory}{third-level}
+
+% general terms are not compulsory anymore,
+% you may leave them out
+%\terms
+%term1, term2
+
+\keywords
+floating point, homoiconic, type classes
+
+\section{Introduction}
+
+Imagine you're writing a machine learning library in Haskell.
+At some point, you'll need to implement the log-logistic function
+\begin{equation}
+f(x) = \log\left(\frac{1}{1+\exp{(-x)}}\right)
+\label{eq:log-logistic}
+\end{equation}
+This function is used in logistic regression and many families of neural networks.
+As a first attempt, you might write:
+\begin{lstlisting}
+logLogistic1 :: Floating x => x -> x
+logLogistic1 x = log(1/(1+exp(-x)))
+\end{lstlisting}
+Unfortunately, this straightforward implementation is numerically unstable.
+When specialized to the |Double| type,
+the |exp| function overflows to infinity for inputs greater than (approximately) $709$.
+%This overflow causes |logLogistic| to take the |log| of 0, which is undefined.
+Therefore, on an input of $-710$,
+|logLogisitic1| will return negative infinity when the true answer is actually very close to $-710$.
+Such an inaccurate answer is unacceptable,
+so our function must be rewritten.
+
+Writing numerically stable functions is a notoriously difficult black art.
+(See \cite{goldberg1991,higham2002,hamming2012} for some classic introductions.)
+Fortunately, a simple technique can be used to improve the stability of the log-logistic function.
+First, check our input to see if it would overflow the |exp| function.
+If no overflow would occur, then calculate our function as normal;
+but if overflow would occur, then use an approximation that does not rely on a call to |exp|.
+Performing this transformation gives us:
+\begin{lstlisting}
+logLogistic2 :: (Floating x, Ord x) => x->x
+logLogistic2 x = if x < (-709)
+    then x
+    else log(1/1+exp(-x))
+\end{lstlisting}
+%This new function is numerically stable, but we've introduced two new problems:
+We've made our function numerically stable, but we've introduced two new problems:
+
+\begin{problem}[obfuscation]
+The purpose of the if statement in |logLogistic2| is non-obvious.
+To understand its purpose,
+the reader must carefully consider the limits of floating point arithmetic.
+Anyone who doesn't regularly work with floating point numbers is unlikely to discover this purpose on their own.
+By transforming our function to have the correct floating point semantics,
+we've obfuscated the function's purpose and made it harder for others to understand and contribute to our library.
+\end{problem}
+
+\begin{problem}[specialization]
+The \lstinline{exp} function when specialized to \lstinline{Float}s overflows on values greater than (approximately) 88.
+This means that |logLogistic2| will give incorrect answers for inputs between 88 and 709.
+To properly handle both |Float|s and |Double|s,
+we must write two separate functions.
+In practice, we may want to support many other numeric types as well.
+Half precision (16 bit) floats and fixed point arithmetic are becoming increasingly popular in machine learning applications due to their increased speed, smaller memory footprint, and lower energy consumption \cite{gupta2015}.
+We need to manually reimplement the log-logistic function specialized to every numeric type we want our library to support.
+\end{problem}
+
+These problems are not unique to the log-logistic function.
+All functions over the real or complex numbers need to be transformed for floating point stability,
+and all such manual transformations suffer from these problems.
+%(In fact, the log-logistic transformation described above might be considered an exceptionally simple case.)
+%There is a large body of literature on the theory of automating these transformations,
+%but relatively little on improving the programmer's experience of dealing with floating point numbers.
+%This pearl focuses on the latter.
+This pearl presents a method for alleviating these problems.
+Specifically, we will see how to write a function
+\begin{lstlisting}
+stabilize :: (Floating x, Ord x)
+    => (x -> x) -> (x -> x)
+\end{lstlisting}
+that automatically takes an input function like |logLogistic1| and outputs a numerically stable version of that function.
+Unfortunately, this introduces a third problem:
+
+\begin{problem}[unlawfulness]
+%How do we know what transformations are valid?
+The standard way to encode valid program transformations in Haskell is through type class laws.
+A classic example is the |Semigroup| type class
+\begin{lstlisting}
+class Semigroup a where
+    (+) :: a -> a -> a
+\end{lstlisting}
+which has the law that |(+)| should be associative.
+%That is, for every type |a| that is a valid instance of |Semigroup|,
+%|(a1+a2)+a3::a| should be equal to |a1+(a2+a3)::a|.
+That is, if the type |a| is an instance of |Semigroup|,
+and the variables |a1|, |a2|, and |a3| all have type |a|,
+then |(a1+a2)+a3| should be equal to |a1+(a2+a3)|.
+This is not true of floating point numbers, however.
+The expression |(0.1+0.2)+0.3| is famously not equal to |0.1+(0.2+0.3)| for |Double|s.
+But there is clearly a sense in which |Double|s are approximately associative,
+and performing an associativity transformation cannot change our answer ``too much.''
+%How can we formalize this notion?
+In order for our |stabilize| method to be generic and useful,
+we need a way to formalize this notion.
+\end{problem}
+
+This pearl attempts to solve all three problems.
+First, we provide a mechanical procedure for constructing FAlgebras from what we call \emph{homogeneous} type classes.
+(Both terms will be defined formally in the next section.)
+These FAlgebras make our numeric functions \emph{homoiconic};
+that is, we can easily get a syntax tree representing the function.
+Second, we show how these syntax trees let us easily manipulate our numeric functions to implement the |stabilize| function described above.
+Third, we introduce a notion of \emph{topological class laws}.
+These class laws let us formalize the intuition that floating point numbers approximately obey class laws.
+Finally, we extend our construction of FAlgebras to the \emph{heterogeneous} case.
+Heterogeneous type classes let us represent the complicated numeric type class hierarchies that arise in practice when working with numeric types.
+
+\section{Homogeneous Functions are Homoiconic}
+Consider the simple numeric class hierarchy shown in Figure \ref{code:group}.
+With this class hierarchy, we can write a function that measures the degree to which the |(+)| operation obeys the associative rule.
+\begin{lstlisting}
+associator :: Group a => a -> a -> a -> a
+associator a1 a2 a3
+    = ((a1+a2)+a3) - (a1+(a2+a3))
+\end{lstlisting}
+We call the |associator| function \emph{homogeneous} because:
+\begin{enumerate}
+\item
+The function's return type and all of its parameters are the same type variable.
+\item
+The constraints contain exactly one type class, and
+that type class has exactly one parameter.
+\end{enumerate}
+Notice that each of the class methods for |Semigroup|, |Monoid|, and |Group| are also homogeneous.
+Therefore, we will also say these classes are homogeneous.
+
+In this section, we will see how to convert any homogeneous function into an isomorphic abstract syntax tree (AST).
+This ability is called \emph{homoiconicity},
+and is usually associated with Lisps.
+We will then see several methods for evaluating these ASTs.
+In subsequent sections, we will manipulate these ASTs to make floating point operations more convenient.
+
+\begin{figure}
+\begin{lstlisting}
+class Semigroup a where
+    (+) :: a -> a -> a
+
+class Semigroup a => Monoid a where
+    zero :: a
+
+class Monoid a => Group a where
+    (-) :: a -> a -> a
+    negate :: a -> a
+\end{lstlisting}
+\caption{A simple numeric hierarchy that obeys the restrictions for homogeneous FAlgebras.}
+\label{code:group}
+\end{figure}
+
+%\begin{figure}
+%\begin{lstlisting}
+%class Num a where
+    %(+), (-), (*)       :: a -> a -> a
+    %negate              :: a -> a
+    %abs, signum         :: a -> a
+    %fromInteger         :: Integer -> a
+%
+%class Num a => Fractional a where
+    %(/)                 :: a -> a -> a
+    %recip               :: a -> a
+    %fromRational        :: Rational -> a
+%
+%class Fractional a => Floating a where
+    %pi                  :: a
+    %exp, log, sqrt      :: a -> a
+    %(**), logBase       :: a -> a -> a
+    %sin, cos, tan       :: a -> a
+    %asin, acos, atan    :: a -> a
+    %sinh, cosh, tanh    :: a -> a
+    %asinh, acosh, atanh :: a -> a
+%
+%class Eq a where
+    %(==), (/=)          :: a -> a -> Bool
+%
+%class Eq a => Ord a where
+    %compare         :: a -> a -> Ordering
+    %(<),(<=),(>),(>=)   :: a -> a -> Bool
+    %max, min            :: a -> a -> a
+%\end{lstlisting}
+%\caption{
+    %A portion of the numeric and comparison hierarchies defined in GHC's Prelude.
+    %Many class methods satisfy the requirements for homogeneous FAlgebras, except:
+    %%|fromInteger| and |fromRational| have non-variable parameters;
+    %%and |(==)|, |(/=)|, |(<)|, |(<=)|, |(>)|, and |(>=)| have non-variable return types.
+%}
+%\label{code:ghc}
+%\end{figure}
+
+\subsection{A type class for FAlgebras}
+Our construction is closely related to other constructions involving initial algebras, FAlgebras, and free monads.
+See for example \cite{swierstra2008}.
+The heart of our construction is the |HomFAlgebra| type class, defined as
+\begin{lstlisting}
+class
+    ( Functor (HomSig alg)
+    , Foldable (HomSig alg)
+    ) => HomFAlgebra (alg::Type->Constraint)
+        where
+    data HomSig alg a
+    runHomSig :: alg a => HomSig alg a -> a
+\end{lstlisting}
+The |HomFAlgebra| class is unusual in that its parameter has kind |Type->Constraint|.
+This means that instances of |HomFAlgebra| will be other type classes (instead of types or type constructors).
+The |Hom| in |HomFAlgebra| stands for homogeneous.
+Most of the names used in this section will be prefixed with |Hom| to differentiate them from related names used in the later heterogeneous constructions.
+
+The easiest way to explain the |HomFAlgebra| class is by example.
+We'll start with the |Semigroup| type class defined above.
+\begin{lstlisting}
+instance HomFAlgebra Semigroup where
+    data HomSig Semigroup a = HomSig_plus a a
+    runHomSig (HomSig_plus a1 a2) = a1+a2
+\end{lstlisting}
+The |HomSig| associated data family is meant to encode what mathematicians call the \emph{signature} of the FAlgebra.
+That is, for every class method, |HomSig| should have a constructor with the same number of parameters.
+Since |Semigroup| has a single function that takes two parameters,
+the |HomSig Semigroup| data instance has a single constructor that takes two parameters.
+The |runHomSig| function evaluates the signature.
+For each constructor in |HomSig|, |runHomSig| should apply the corresponding function to the constructor's parameters.
+
+To complete the |HomFAlgebra Semigroup| instance, we must also define the following superclass instances.
+\begin{lstlisting}
+instance Functor (HomSig Semigroup) where
+    fmap f (HomSig_plus a1 a2)
+        = HomSig_plus (f a1) (f a2)
+
+instance Foldable (HomSig Semigroup) where
+    foldr f b (HomSig_plus a1 a2)
+        = f a2 (f a1 b)
+\end{lstlisting}
+As usual, there is only a single valid |Functor| instance.
+There are multiple valid |Foldable| instances depending on the order in which |foldr| considers the constructors' parameters,
+but for our purposes the order is not important.
+
+Instances get slightly more complicated when the parameter class has superclasses.
+In this case, the |HomSig| data instance must also have a constructor for each superclass that stores the superclass's signature.
+This can be seen in the |Monoid| and |Group| instances below.
+%The |HomFAlgebra| instances of |Monoid| and |Group| demonstrate this.
+\begin{lstlisting}
+instance HomFAlgebra Monoid where
+    data HomSig Monoid a
+        = HomSig_zero
+        | HomSig_Semigroup_Monoid
+            (HomSig Semigroup a)
+    runSig HomSig_zero = zero
+    runSig (HomSig_Semigroup_Monoid s)
+        = runHomSig s
+
+instance HomFAlgebra Group where
+    data HomSig Group a
+        = HomSig_negate a
+        | HomSig_minus a a
+        | HomSig_Monoid
+            (HomSig_Monoid_Group a)
+    runSig (HomSig_negate a) = a
+    runSig (HomSig_minus a1 a2) = a1-a2
+    runSig (HomSig_Monoid_Group s)
+        = runHomSig s
+\end{lstlisting}
+Notice that the data instance |HomSig Group| does not need a constructor for the |Semigroup| signature because this is included in the |Monoid| signature.
+The corresponding |Functor| and |Foldable| instances have been omitted for brevity,
+but can be found in the paper's git repo.
+
+%The procedure for generating |HomFAlgebra| instances is purely mechanical.
+%The ?? library automates the process with the |mkHomFAlgebra| template Haskell function.
+
+\subsection{Constructing the AST}
+
+We can convert the signature of an FAlgebra into an AST as follows:
+\begin{lstlisting}
+type HomAST alg a = HomFree (HomSig alg) a
+
+data HomFree f a
+    = HomPure a
+    | HomFree (f (HomFree f a))
+\end{lstlisting}
+Intuitively,
+the |HomPure| constructor represents a leaf in the AST,
+and the |HomFree| constructor represents a branch.
+The parameter to |HomFree| is filled by the appropriate |HomSig| data instance.
+The constructor used for the |HomSig| instance corresponds to an operation,
+and the parameters to the constructor will contain ASTs nested recursively.
+
+For example, consider the expression |(1+2)+3|.
+We can create a corresponding AST using |Semigroup|'s |HomFAlgebra| instance.
+\begin{lstlisting}
+HomFree
+  (HomSig_plus
+    (HomFree
+      (HomSig_plus
+        (HomPure 1)
+        (HomPure 2)
+      )
+    )
+    (HomPure 3)
+  )
+\end{lstlisting}
+We can also create a corresponding AST for any class that has |Semigroup| as a superclass.
+Below is the |Group| AST.
+\begin{lstlisting}
+HomFree
+  (HomSig_Monoid_Group
+    (HomSig_Semigroup_Monoid
+      (HomSig_plus
+        (HomFree
+          (HomSig_Monoid_Group
+            (HomSig_Semigroup_Monoid
+              (HomSig_plus
+                (HomPure 1)
+                (HomPure 2)
+              )
+            )
+          )
+        )
+        (HomPure 3)
+      )
+    )
+  )
+\end{lstlisting}
+Notice that the |HomSig_plus| constructor must be embedded into the |Group|'s |HomSig| with calls to |HomSig_Monoid_Group| and |HomSig_Semigroup_Monoid|.
+
+Constructing these ASTs by hand is a tedious process.
+There is a considerable amount of boilerplate in the |Group| AST above as a result of the need to embed the |HomSig_plus| constructor.
+We can avoid this boilerplate with the following type class.
+\begin{lstlisting}
+class
+    ( HomFAlgebra alg1
+    , HomFAlgebra alg2
+    ) => HomView alg1 alg2
+        where
+    embedHomSig
+        :: HomSig alg1 a -> HomSig alg2 a
+    unsafeExtractHomSig
+        :: HomSig alg2 a -> HomSig alg1 a
+\end{lstlisting}
+Instances of the |HomView| class should satisfy the property that |alg1| is either equal to |alg2| or is a superclass of |alg2|, and
+all such relationships should have a corresponding instance.
+For example, |Semigroup| is a superclass of |Group|,
+so we should have a |HomView Semigroup Group| instance.
+\begin{lstlisting}
+instance HomView Semigroup Group
+    embedHomSig s
+        = HomSig_Monoid_Group (embedHomSig s)
+    unsafeExtractHomSig (HomSig_Monoid_Group s)
+        = unsafeExtractHomSig s
+\end{lstlisting}
+Because of this property, we know that the |HomSig alg1 a| data instance can always be embedded into a |HomSig alg2 a| data instance.
+But it is only sometimes true that we can extract a |HomSig alg1 a|,
+which is why the corresponding function is labeled |unsafe|.
+
+Armed with the |HomView| class, we can create a uniform representation for all class's ASTs.
+The expression |(1+2)+3| can now be represented as:
+\begin{lstlisting}
+HomFree
+  (embedHomSig
+    (HomSig_plus
+      (HomFree
+        (embedHomSig
+          (HomSig_plus
+            (HomPure 1)
+            (HomPure 2)
+          )
+        )
+      )
+      (HomPure 3)
+    )
+  )
+\end{lstlisting}
+
+%Every FAlgebra can be embedded into itself.
+%\begin{lstlisting}
+%instance HomView alg alg where
+    %embedSig = id
+    %unsafeExtractSig = id
+%\end{lstlisting}
+
+%\begin{lstlisting}
+%instance View Semigroup Monoid where
+    %embedSig = Sig_Monoid_Semigroup
+    %unsafeExtractSig (Sig_Monoid_Semigroup s) = s
+
+%instance View Monoid Group where
+    %embedSig s = Sig_Group_Monoid (embedSig s)
+    %unsafeExtractSig (Sig_Group_Monoid s) = unsafeExtractSig s
+%\end{lstlisting}
+
+%\begin{lstlisting}
+%instance View Semigroup Group where
+    %embedSig s = Sig_Group_Monoid (embedSig s)
+    %unsafeExtractSig (Sig_Group_Monoid s) = unsafeExtractSig s
+%\end{lstlisting}
+
+Using our uniform representation of an AST,
+we can make the AST itself an instance of any homogeneous type class.
+Again, we'll approach the procedure by example.
+We can write a |Semigroup| instance for |HomAST Semigroup a| as:
+\begin{lstlisting}
+instance
+    ( HomView Semigroup alg
+    ) => Semigroup (HomFree (HomSig alg) a)
+        where
+    (+) e1 e2 = HomFree $ embedHomSig $
+            HomSig_plus e1 e2
+\end{lstlisting}
+For each function in the type class,
+we simply embed the function's constructor into the AST by prepending the expression |HomFree $ embedHomSig $|.
+The |Monoid| and |Group| instances follow a similar pattern.
+\begin{lstlisting}
+instance
+    ( HomView Semigroup alg
+    , HomView Monoid alg
+    ) => Monoid (HomFree (HomSig alg) a)
+        where
+    zero = HomFree $ embedHomSig $
+        HomSig_zero
+
+instance
+    ( HomView Semigroup alg
+    , HomView Monoid alg
+    , HomView Group alg
+    ) => Group (HomFree (HomSig alg) a)
+        where
+    negate e  = HomFree $ embedHomSig $
+        HomSig_negate e
+    (-) e1 e2 = HomFree $ embedHomSig $
+        HomSig_minus e1 e2
+\end{lstlisting}
+We can easily create ASTs using these instances.
+The |Semigroup| AST can be created with the expression
+\begin{lstlisting}
+(HomPure 1+HomPure 2)+HomPure 3
+    :: HomAST Semigroup a
+\end{lstlisting}
+And the |Group| AST can be created by just changing the type signature.
+\begin{lstlisting}
+(HomPure 1+HomPure 2)+HomPure 3
+    :: HomAST Group a
+\end{lstlisting}
+
+\subsection{Showing the AST}
+Now that we can create our ASTs, we want to actually do something with them!
+The simplest task is to convert them into a |String| for display.
+This is an easy procedure of writing |Show| instances for the |HomSig| and |HomFree| data types.
+
+The are no tricks in the |Show| instance for |Semigroup|'s |HomSig|.
+\begin{lstlisting}
+instance Show a =>
+    Show (HomSig Semigroup a)
+        where
+    show (HomSig_plus a1 a2)
+        = show a1++"+"++show a2
+\end{lstlisting}
+For each operation constructor, we simply show the parameters and the operation connecting them.
+For type classes with superclasses, we also need to recursively show the superclasses as can be seen in the |Monoid| and |Group| instances below.
+\begin{lstlisting}
+instance Show a =>
+    Show (HomSig Monoid a)
+        where
+    show (HomSig_Semigroup_Monoid s)
+        = show s
+    show (HomSig_zero) = "zero"
+
+instance Show a =>
+    Show (HomSig Group a)
+        where
+    show (HomSig_Monoid_Group s)
+        = show s
+    show (HomSig_negate a)
+        = "negate "++show a
+    show (HomSig_minus a1 a2)
+        = show a1++"-"++show a2
+\end{lstlisting}
+The |HomFree| type's |Show| instance is similarly straightforward..
+\begin{lstlisting}
+instance (Show a, Show (f (HomFree f a)))
+    => Show (HomFree f a)
+        where
+    show (HomPure a) = show a
+    show (HomFree f) = "("++show f++")"
+\end{lstlisting}
+If the syntax tree contains only a single leaf, we just show that leaf.
+If the syntax tree contains a branch,
+then put parenthesis around the branch so that we don't lose information about the order of operations, and show the functor in the middle.
+
+\subsection{Evaluating the syntax tree}
+Another useful task for ASTs is to evaluate them,
+generating the value they represent.
+This data type is called the free monad because as long as the parameter |f| is a |Functor|,
+then |HomFree| has a valid |Monad| instance.
+Since all |Monad|s are by necessity also |Functor|s,
+|HomFree| has a valid |Functor| instance as well.
+\begin{lstlisting}
+instance Functor f => Functor (HomFree f) where
+    fmap g (HomPure a) = HomPure (g a)
+    fmap g (HomFree f)
+        = HomFree (fmap (fmap g) f)
+\end{lstlisting}
+For our purposes, that's all the structure we'll need.
+
+First, we construct a function that ``runs'' the syntax tree, converting it into a single value.
+\begin{lstlisting}
+runHomAST :: (HomFAlgebra alg, alg a)
+    => HomAST alg a -> a
+runHomAST (HomPure a) = a
+runHomAST (HomFree f) = runHomSig (fmap evalHom f)
+\end{lstlisting}
+If our syntax tree already consists of just a single value (i.e. it is the |HomePure| constructor),
+then we just return that value.
+Otherwise, we use the |Functor| instance to recursively convert the |HomSig|s into types of |a|, then a call to |runHomSig| combines the results.
+
+\subsection{Homoiconicity at last!}
+We are finally ready to see that our construction makes homogeneous functions homoiconic.
+If we open GHCi and enter the following expression
+\begin{lstlisting}
+ghci> let ast=associator (HomPure a1) (HomPure a2) (HomPure a3)
+\end{lstlisting}
+the display shows our AST
+\begin{lstlisting}
+\end{lstlisting}
+We can also evaluate our AST and see that doing so gives the same results as running the original expression.
+\begin{lstlisting}
+ghci> runHomAST ast
+
+ghci> associator a1 a2 a3
+
+\end{lstlisting}
+We are now ready to use our ASTs to make working with numeric functions easier.
+%\subsection{The Prelude's Numeric Hierarchy}
+
+\section{Implementing the stabilize function}
+
+We've seen how to easily construct the ASTs,
+now it's time to perform computations on them.
+The standard way to deconstruct an AST is via pattern matching.
+We'll use the |ViewPatterns| and |PatternSynonyms| language extensions to simplify this task.
+Then we'll see three examples of improving floating point accuracy.
+
+\subsection{Pattern matching the AST}
+
+We'll begin with a very simple example.
+Consider the following simple, but numerically unstable function.
+\begin{lstlisting}
+testFunc1 :: Floating a => a -> a
+testFunc1 = log(exp a)
+\end{lstlisting}
+As in our |logLogistic1| function, |testFunc| is unstable when specialized to |Double|s
+because input values greater than (approximately) 710 cause the |exp| function to overflow to infinity;
+the log of infinity is still infinity;
+so the returned answer is infinity.
+But clearly this is not the correct answer.
+Mathematically, the $\log$ is the inverse of $\exp$, so the final result should be 711.
+
+First, we'll see how to properly manipulate the AST to fix this problem.
+%We need a function of type |AST Floating a -> AST Floating a|.
+We're trying to convert the expression |log (exp x)| into simply |x|.
+To do this, we can just pattern match on the AST for the left hand side of the expression,
+and replace it with the right hand side.
+\begin{lstlisting}
+logexpAST1 ::
+    AST Floating a -> AST Floating a
+logexpAST1
+    (Free (Sig_log (Free (Sig_exp a)))) = a
+logexpAST1 a = a
+\end{lstlisting}
+This function has two problems.
+First, our pattern matching expression is large and obnoxious.
+Second, it's not generic.
+
+We can fix the second problem using the |ViewPatterns| language extension.
+\begin{lstlisting}
+logexpAST2 :: View Floating alg
+    => AST alg a -> AST alg a
+logexpAST2
+    (Free (unsafeExtractSig -> Sig_log
+    (Free (unsafeExtractSig -> Sig_exp a))))
+    = a
+logexpAST2 a = a
+\end{lstlisting}
+But this made our pattern matches even uglier!
+Fortunately, we can use the |PatternSynonyms| extension to greatly simplify these patterns.
+\footnote{
+    %These patterns can be made bidirectional using the |embedSig| function.
+    For ease of presentation, only the unidirectional case is shown.
+}
+\begin{lstlisting}
+pattern AST_log ::
+    ( View Floating alg
+    ) => AST alg a -> AST alg a
+pattern AST_log e
+    <- Free (unsafeExtractSig -> Sig_log e)
+
+pattern AST_exp ::
+    ( View Floating alg
+    ) => AST alg a -> AST alg a
+pattern AST_exp e
+    <- Free (unsafeExtractSig -> Sig_exp e)
+\end{lstlisting}
+Armed with these pattern synonyms, we can rewrite our function in the much simpler form below.
+\begin{lstlisting}
+logexpAST3 :: View Floating alg
+    => AST alg a -> AST alg a
+logexpAST3 (AST_log (AST_exp a)) = a
+logexpAST3 a = a
+\end{lstlisting}
+Now that we can manipulate the AST, let's apply it to our function.
+\begin{lstlisting}
+transform1 :: forall alg x.
+    ( FAlgebra alg
+    , alg x
+    ) => (AST alg x -> AST alg x)
+      -> (AST alg x -> AST alg x)
+      -> (x -> x)
+transform1 go f x = runHomAST $ go $ f (Pure x)
+\end{lstlisting}
+
+
+But is our function really correct?
+\begin{lstlisting}
+testFunc2 :: Floating a => a -> a
+testFunc2 = 1+log(exp a)
+\end{lstlisting}
+What if we call
+
+\begin{lstlisting}
+logexpAST4 :: View Floating alg => AST alg a -> AST alg a
+logexpAST4 (AST_log (AST_exp a)) = a
+logexpAST4 (Free f) = Free (fmap logexpAST4 f)
+logexpAST4 (Pure a) = Pure a
+\end{lstlisting}
+
+\begin{lstlisting}
+testFunc :: Floating a => a -> a
+testFunc a = log(exp a)
+
+ghci> logexpAST4 (testFunc 2) :: AST Floating Double
+((fromInteger 1)+(fromInteger 2))
+
+testFunc2 :: Floating a => a -> a
+testFunc2 a = 1+exp(exp(exp(log(log(log a)))))
+
+ghci> fixAST stabilizeAST (testFunc2 var1 :: AST Floating Var)
+((fromInteger 1)+var1)
+\end{lstlisting}
+
+\begin{lstlisting}
+fixAST :: (Eq (Sig alg (Free (Sig alg) a)), Eq a) => (AST alg a -> AST alg a) -> AST alg a -> AST alg a
+fixAST f ast = if ast==ast'
+    then ast
+    else fixAST f ast'
+    where
+        ast' = f ast
+\end{lstlisting}
+
+\subsection{More complex rules}
+
+The rules in in the previous section are relatively simple.
+They could just as easily have been written using GHC's rewrite rules syntax.
+Rewrite rules are the primary mechanism for optimising source code in GHC.
+One optimization that rewrite rules cannot support is constant folding,
+and there is code in GHC specially to perform this constant folding.
+
+\begin{lstlisting}
+foldConstants :: View Num alg => AST alg a -> AST alg a
+foldConstants (AST_plus   (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1+a2)
+foldConstants (AST_minus  (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1-a2)
+foldConstants (AST_mul    (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1*a2)
+foldConstants (AST_negate (AST_fromInteger a1)) = AST_fromInteger (negate a1)
+foldConstants (Free sig) = Free (fmap foldConstants sig)
+foldConstants (Pure a  ) = Pure a
+\end{lstlisting}
+
+\begin{lstlisting}
+constExpr :: Num a => a
+constExpr = 4+2*(8-2)-1
+
+-- ghci> fixAST foldConstants constExpr
+-- (fromInteger 18)
+
+constFunc :: Num a => a -> a -> a
+constFunc x1 x2 = x1*2-(7-2)*x2
+
+-- ghci> fixAST foldConstants (constFunc 2 3)
+-- (fromInteger -11)
+-- ghci> fixAST foldConstants (constFunc var1 var2)
+-- ((var1*(fromInteger 2))-((fromInteger 5)*var2))
+\end{lstlisting}
+
+\subsection{The log-logistic function}
+
+\begin{lstlisting}
+stabAST :: Eq a => AST FloatingOrd a -> AST FloatingOrd a
+stabAST
+    (AST_log
+        (AST_div
+            (AST_fromInteger 1)
+            (AST_plus
+                (AST_fromInteger 1)
+                (AST_exp
+                    (AST_negate x)
+                )
+            )
+        )
+    )
+    = logLogistic2 x
+\end{lstlisting}
+
+\section{Making floats lawful}
+
+\subsection{Varieties and exact laws}
+
+A class law can be defined by a pair of ASTs that substituted for each other without changing the semantics of a program.
+For convenience, we assign each law a name and put it in the following data type.
+\begin{lstlisting}
+data Law alg = Law
+    { lawName :: String
+    , lhs     :: HomAST alg Var
+    , rhs     :: HomAST alg Var
+    }
+\end{lstlisting}
+A \emph{variety} is an algebraic structure that has a set of associated laws.
+We can encode a variety in Haskell as:
+\begin{lstlisting}
+class HomFAlgebra alg => HomVariety alg where
+    laws :: [Law alg]
+\end{lstlisting}
+Again, notice that instances of this class will be other type classes.
+
+To encode the laws of a type class, we create an appropriate |HomVariety| instance.
+The |Semigroup| class has the following instance defining what it means to be associative.
+\begin{lstlisting}
+instance HomVariety Semigroup where
+    laws = [ Law
+        { lawName = "associative"
+        , lhs = (var1+var2)+var3
+        , rhs = var1+(var2+var3)
+        } ]
+\end{lstlisting}
+
+\subsection{Listing the laws}
+
+When working with a large numerical hierarchy,
+it is easy to forget the exact laws that a class must obey.
+Wouldn't it be nice if there were an easy way to ask the repl what the class laws are?
+
+With this encoding, there is.
+First, we define a function that pretty prints a |Law|.
+\begin{lstlisting}
+printLaw :: Show (HomAST alg Var)
+    => Law alg -> IO ()
+printLaw law = do
+    putStrLn ( "  "++lawName law++":"      )
+    putStrLn ( "    lhs: "++show (lhs law) )
+    putStrLn ( "    rhs: "++show (rhs law) )
+\end{lstlisting}
+Then we define a function that calls |printLaw| on each class law.
+\begin{lstlisting}
+printLaws :: forall alg.
+    ( HomVariety alg
+    , Show (HomAST alg Var)
+    ) => Proxy alg -> IO ()
+printLaws palg = do
+    forM_ (laws::[Law alg]) printLaw
+\end{lstlisting}
+Now, if we enter the command |printLaws @Semigroup| into the REPL,
+we get a nice reminder that every instance of |Semigroup| should be associative.
+
+\subsection{The floating point topology}
+
+Checking if two floating point numbers are equal is almost always a bad idea.
+Better practice is to check if the two numbers are ``close enough'' for your application.
+We can formalize this notion via topology.
+
+In mathematics, a \emph{topology} is a set $X$ equipped with a family of subsets of $X$ called $\tau$ such that:
+%In mathematics, a \emph{topology} is a set $X$ and a set of neighborhoods $\tau \subseteq 2^X$ such that:
+\begin{enumerate}
+\item
+$\tau$ contains the empty set and the set $X$.
+\item
+$\tau$ is closed under an arbitrary number of unions.
+\item
+$\tau$ is closed under finitely many intersections.
+\end{enumerate}
+We call an element of $\tau$ a neighborhood.
+
+To encode the notion of a topology in Haskell,
+we first must encode the idea of a set.
+
+\begin{lstlisting}
+class Poset a where
+    inf :: a -> a -> a
+\end{lstlisting}
+
+\begin{lstlisting}
+class Poset (Neighborhood a) => Topology a
+        where
+    type Neighborhood a
+    (==) :: a -> a -> (Neighborhood a -> Bool)
+\end{lstlisting}
+
+%It is well known that equality testing is almost always a bad idea for floating point numbers.
+As mentioned before, floating point numbers are not strictly associative,
+but they have a notion of being approximately associative.
+In particular, when we call the |associator| function defined above on any three floating point values,
+we can guarantee that the result is small relative to the input values.
+
+\subsection{Topological test cases}
+
+\section{Conclusion}
+
+There are two more points worth discussion.
+
+The first is efficiency.
+The |stabilize| function is absurdly slow.
+If you view the core, you can see two very different outputs.
+But the output of |stabilize| is highly structured and ready to be optimized.
+It's left as an exercise for the reader to write a GHC plugin to fix the problem.
+
+The second is improved class hierarchies.
+Most of the interesting alternative numeric hierarchies involve many non-homogeneous functions.
+In particular, they use type classes.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\appendix
+%\section{Appendix Title}
+%
+%This is the text of the appendix, if you need one.
+%Most notably, it is not generic.
+%
+%\acks
+%
+%Acknowledgments, if needed.
+%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{abbrvnat}
+\bibliography{paper}
+
+
+\end{document}

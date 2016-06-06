@@ -4,7 +4,7 @@
 module Lattice
     where
 
-import Prelude (fromInteger, Functor(..), Foldable(..))
+import Prelude (fromInteger, Functor(..), Foldable(..), Eq(..))
 import qualified Prelude as P
 import LocalPrelude
 import FAlgebra98
@@ -14,13 +14,13 @@ import FAlgebra98
 class Poset a where
     inf :: a -> a -> a
 
-mkFAlgebra98 ''Poset
+mkFAlgebra ''Poset
 
 infixr 3 &&
 (&&) :: Poset a => a -> a -> a
 (&&) = inf
 
-instance Variety98 Poset where
+instance Variety Poset where
     laws = [ associative (&&), commutative (&&), idempotent (&&) ]
 
 #define mkPoset(x) \
@@ -39,9 +39,9 @@ mkPoset(Char)
 class Poset a => LowerBounded a where
     lowerBound :: a
 
-mkFAlgebra98 ''LowerBounded
+mkFAlgebra ''LowerBounded
 
-instance Variety98 LowerBounded where
+instance Variety LowerBounded where
     laws =
         [ Law
             { lawName = "lowerBounded"
@@ -50,29 +50,24 @@ instance Variety98 LowerBounded where
             }
         ]
 
-# define mkLattice(x) \
-instance Lattice x where sup = P.max
+#define mkLowerBounded(x) \
+instance LowerBounded x where lowerBound = P.minBound
 
-mkLattice(Float)
-mkLattice(Double)
-mkLattice(Rational)
-mkLattice(Integer)
-mkLattice(Int)
-mkLattice(Bool)
-mkLattice(Char)
+mkLowerBounded(Bool)
+mkLowerBounded(Char)
 
 --------------------
 
 class Poset a => Lattice a where
     sup :: a -> a -> a
 
-mkFAlgebra98 ''Lattice
+mkFAlgebra ''Lattice
 
 infixr 3 ||
 (||) :: Lattice a => a -> a -> a
 (||) = sup
 
-instance Variety98 Lattice where
+instance Variety Lattice where
     laws =
         [ associative (||)
         , commutative (||)
@@ -89,20 +84,25 @@ instance Variety98 Lattice where
             }
         ]
 
-#define mkLowerBounded(x) \
-instance LowerBounded x where lowerBound = P.minBound
+# define mkLattice(x) \
+instance Lattice x where sup = P.max
 
-mkLowerBounded(Bool)
-mkLowerBounded(Char)
+mkLattice(Float)
+mkLattice(Double)
+mkLattice(Rational)
+mkLattice(Integer)
+mkLattice(Int)
+mkLattice(Bool)
+mkLattice(Char)
 
 --------------------
 
 class Lattice a => UpperBounded a where
     upperBound :: a
 
-mkFAlgebra98 ''UpperBounded
+mkFAlgebra ''UpperBounded
 
-instance Variety98 UpperBounded where
+instance Variety UpperBounded where
     laws =
         [ Law
             { lawName = "upperBounded"
@@ -122,13 +122,13 @@ mkUpperBounded(Char)
 class (LowerBounded a, UpperBounded a) => Complemented a where
     not :: a -> a
 
-mkFAlgebra98 ''Complemented
+mkFAlgebra ''Complemented
 
 -- NOTE:
 -- These laws are considerably weaker than the laws that use quantifiers.
 -- Because of our definition of Variety (and that quantifiers make quickcheck less effective)
 -- we don't use the stronger laws.
-instance Variety98 Complemented where
+instance Variety Complemented where
     laws =
         [ Law
             { lawName = "complement_inf"
@@ -152,15 +152,15 @@ class (LowerBounded a, UpperBounded a) => Heyting a where
     infixr 3 ==>
     (==>) :: a -> a -> a
 
-    default (==>) :: Complemented a => a -> a -> a
-    (==>) = modusPonens
+--     default (==>) :: Complemented a => a -> a -> a
+--     (==>) = modusPonens
 
 modusPonens :: Complemented b => b -> b -> b
 modusPonens b1 b2 = not b1 || b2
 
-mkFAlgebra98 ''Heyting
+mkFAlgebra ''Heyting
 
-instance Variety98 Heyting where
+instance Variety Heyting where
     laws =
         [ Law
             { lawName = "Heyting_upperBound"
@@ -294,4 +294,3 @@ instance Lattice (HList '[]) where
 
 instance (Lattice x, Lattice (HList xs)) => Lattice (HList (x ': xs)) where
     sup (x1 `HCons` xs1) (x2 `HCons` xs2) = sup x1 x2 `HCons` sup xs1 xs2
-

@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 
 module TemplateHaskellUtils
     where
@@ -30,6 +31,7 @@ renameClassMethod n = concatMap go $ nameBase n
         go '-' = "minus"
         go '.' = "dot"
         go '*' = "mul"
+        go '/' = "div"
         go '=' = "eq"
         go '>' = "gt"
         go '<' = "lt"
@@ -37,6 +39,10 @@ renameClassMethod n = concatMap go $ nameBase n
 
 isOperator :: String -> Bool
 isOperator str = not $ length str == length (renameClassMethod $ mkName $ str)
+
+isVarT :: TH.Type -> Bool
+isVarT (VarT _) = True
+isVarT _        = False
 
 -- | Given a type that stores a function:
 -- return a list of the arguments to that function,
@@ -65,17 +71,6 @@ subForall n (ForallT [v] _ t) = go t
         go (AppT t1 t2) = AppT (go t1) (go t2)
         go (VarT _) = VarT n
         go t = t
-
--- | Given a list of arguments passed to a function, return a list of patterns;
--- the inputs must be all type variables, otherwise an error will be thrown;
--- the Name parameter is only used for better error messages;
--- the output patterns will contain variables e1,e2,...eN where N is the length of the input
-args2pat :: Name -> [TH.Type] -> [Pat]
-args2pat sigName xs = go 0 xs
-    where
-        go i [] = []
-        go i (VarT n:xs) = (VarP $ mkName $ nameBase n ++ show i):go (i+1) xs
-        go i (x:xs) = error $ "function "++nameBase sigName++" has unsupported argument type "++show (ppr x)
 
 -- | Given a class name, find all the superclasses
 listSuperClasses :: Name -> Q [Name]
