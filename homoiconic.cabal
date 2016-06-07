@@ -3,7 +3,7 @@
 
 name:                homoiconic
 version:             0.1.0.0
-synopsis:            Convet Haskell expressions into syntax trees at runtime and compile time
+synopsis:            Convet between Haskell expressions and isomorphic syntax trees at runtime and compile time
 -- description:
 homepage:            github.com/mikeizbicki/homoiconic
 license:             BSD3
@@ -17,47 +17,49 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:
-    FAlgebra98,
-    HomPrelude
+    exposed-modules:
+        Homogeneous.FAlgebra,
+        Homogeneous.PreludeInstances
 
-  -- other-modules:
-  extensions:
-    UndecidableSuperClasses,
-    ImplicitParams,
-    TypeInType,
-    TypeFamilyDependencies,
-    TypeApplications,
-    DeriveGeneric,
-    AllowAmbiguousTypes,
-    TypeFamilies,
-    PatternSynonyms,
-    ViewPatterns,
-    DefaultSignatures,
-    RankNTypes,
-    TemplateHaskell,
-    NoRebindableSyntax,
-    TypeOperators,
-    TupleSections,
-    StandaloneDeriving,
-    ScopedTypeVariables,
-    MultiParamTypeClasses,
-    FlexibleInstances,
-    GADTs,
-    UndecidableInstances,
-    ConstraintKinds,
-    FlexibleContexts,
-    CPP,
-    PatternSynonyms,
-    DataKinds
+    other-modules:
+        TemplateHaskellUtils
 
-  build-depends:
-    base,
-    template-haskell,
-    tasty,
-    tasty-smallcheck,
-    tasty-quickcheck,
-    QuickCheck
+    extensions:
+        UndecidableSuperClasses,
+        ImplicitParams,
+        TypeInType,
+        TypeFamilyDependencies,
+        TypeApplications,
+        DeriveGeneric,
+        AllowAmbiguousTypes,
+        TypeFamilies,
+        PatternSynonyms,
+        ViewPatterns,
+        DefaultSignatures,
+        RankNTypes,
+        TemplateHaskell,
+        NoRebindableSyntax,
+        TypeOperators,
+        TupleSections,
+        StandaloneDeriving,
+        ScopedTypeVariables,
+        MultiParamTypeClasses,
+        FlexibleInstances,
+        GADTs,
+        UndecidableInstances,
+        ConstraintKinds,
+        FlexibleContexts,
+        CPP,
+        PatternSynonyms,
+        DataKinds
+
+    build-depends:
+        base,
+        template-haskell,
+        tasty,
+        tasty-smallcheck,
+        tasty-quickcheck,
+        QuickCheck
 --     test-framework,
 --     test-framework-quickcheck2
 --     base == 4.9,
@@ -68,25 +70,25 @@ library
 --     generic-deriving >=1.6 && <1.7,
 --     template-haskell >=2.10 && <2.11
 
-  ghc-options:
-    -O2
+    ghc-options:
+        -O2
 
-    -ddump-to-file
---     -ddump-rule-firings
---     -ddump-rule-rewrites
---     -ddump-rules
---     -ddump-cmm
---     -ddump-simpl-stats
---     -dppr-debug
-    -ddump-simpl
-    -dsuppress-module-prefixes
-    -dsuppress-uniques
-    -dsuppress-idinfo
-    -dsuppress-coercions
-    -dsuppress-type-applications
+--         -ddump-to-file
+--         -ddump-rule-firings
+--         -ddump-rule-rewrites
+--         -ddump-rules
+--         -ddump-cmm
+--         -ddump-simpl-stats
+--         -dppr-debug
+--         -ddump-simpl
+--         -dsuppress-module-prefixes
+--         -dsuppress-uniques
+--         -dsuppress-idinfo
+--         -dsuppress-coercions
+--         -dsuppress-type-applications
 
-  hs-source-dirs:
-    src
+    hs-source-dirs:
+        src
 
-  default-language:
-    Haskell2010
+    default-language:
+        Haskell2010

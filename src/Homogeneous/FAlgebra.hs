@@ -18,14 +18,14 @@
 
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
-module FAlgebra98
+module Homogeneous.FAlgebra
     (
 
     -- * FAlgebra
       FAlgebra (..)
     , Free (..)
     , AST
-    , runHomAST
+    , runAST
     , View (..)
 
     -- ** Template Haskell
@@ -61,11 +61,21 @@ module FAlgebra98
 
     -- ** Evaluating laws
     , Testable
+
+    -- *** Exact
     , runTests
     , runAllTests
 
+    , law2property
+    , class2quickcheck
+
+    , law2tasty
     , class2tasty
     , superclasses2tasty
+
+    -- *** Approximate
+    , isNeighbor
+    , Approximate (..)
     )
     where
 
@@ -193,10 +203,10 @@ instance (Functor f, Foldable f) => Foldable (Free f) where
 
 type AST (alg :: Type -> Constraint) a = Free (Sig alg) a
 
-{-# INLINABLE runHomAST #-}
-runHomAST :: (FAlgebra alg, alg a) => AST alg a -> a
-runHomAST (Pure a) = a
-runHomAST (Free f) = runSig (fmap runHomAST f)
+{-# INLINABLE runAST #-}
+runAST :: (FAlgebra alg, alg a) => AST alg a -> a
+runAST (Pure a) = a
+runAST (Free f) = runSig (fmap runAST f)
 
 class (FAlgebra alg1, FAlgebra alg2) => View alg1 alg2 where
     embedSig         :: Sig alg1 a -> Sig alg2 a
@@ -352,16 +362,39 @@ subVars expr varmap = fmap go expr
         go var = case lookup var varmap of
             Just a -> a
 
-law2quickcheck :: forall (a :: Type) alg.
+law2property :: forall (a :: Type) alg.
+    ( FAlgebra alg
+    , alg a
+    , Eq a
+    , Arbitrary a
+    ) => Proxy a -> Law alg -> Gen Bool
+law2property p law = do
+    as <- infiniteListOf (arbitrary::Gen a)
+    let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
+    return $ (runAST $ subVars (lhs law) varmap)
+          == (runAST $ subVars (rhs law) varmap)
+
+class2quickcheck :: forall a alg.
+    ( Variety alg
+    , alg a
+    , Eq a
+    , Arbitrary a
+    ) => Proxy a -> Proxy alg -> IO ()
+class2quickcheck pa _ = forM_ (laws::[Law alg]) $ \law -> do
+    putStr $ lawName law++": "
+    quickCheck $ law2property pa law
+
+law2tasty :: forall (a :: Type) alg.
     ( FAlgebra alg
     , alg a
     , Testable a
     ) => Proxy a -> Law alg -> TestTree
-law2quickcheck p law = QC.testProperty (lawName law) $ do
-    as <- infiniteListOf (arbitrary::Gen a)
-    let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
-    return $ (runHomAST $ subVars (lhs law) varmap)
-          == (runHomAST $ subVars (rhs law) varmap)
+law2tasty p law = QC.testProperty (lawName law) $ law2property p law
+-- law2tasty p law = QC.testProperty (lawName law) $ do
+--     as <- infiniteListOf (arbitrary::Gen a)
+--     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
+--     return $ (runAST $ subVars (lhs law) varmap)
+--           == (runAST $ subVars (rhs law) varmap)
 
 class2tasty :: forall alg a.
     ( Variety alg
@@ -370,7 +403,7 @@ class2tasty :: forall alg a.
     ) => Proxy alg -> Proxy a -> TestTree
 class2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " on " ++ show (typeRep pa) )
-    $ map (law2quickcheck pa) (laws::[Law alg])
+    $ map (law2tasty pa) (laws::[Law alg])
 
 superclasses2tasty :: forall alg a.
     ( Variety alg
@@ -380,7 +413,7 @@ superclasses2tasty :: forall alg a.
 superclasses2tasty palg pa = testGroup
     ( show (typeRep palg) ++ " (and superclasses) on " ++ show (typeRep pa) )
     $
-    [ testGroup (show t) $ map (law2quickcheck pa) (laws::[Law alg])
+    [ testGroup (show t) $ map (law2tasty pa) (laws::[Law alg])
     | (t,laws) <- allLaws @alg
     ]
     ++
@@ -407,6 +440,15 @@ runTasty tt = do
         Just x -> x
     return ()
 
+--------------------------------------------------------------------------------
+
+isNeighbor :: (Num a, Ord a) => a -> a -> a -> Bool
+isNeighbor a1 a2 n = abs (a1-a2) <= n
+
+class (alg a, Variety alg) => Approximate alg a where
+    lawError :: Law alg -> [a] -> a
+
+instance {-#OVERLAPPABLE#-} (alg a, Variety alg) => Approximate alg a
 
 --------------------------------------------------------------------------------
 -- template haskell functions

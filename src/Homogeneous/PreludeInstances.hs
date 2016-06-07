@@ -5,15 +5,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module HomPrelude
+module Homogeneous.PreludeInstances
     where
 
-import FAlgebra98
-import Spatial98
+import Homogeneous.FAlgebra
 import Prelude
-import Data.Kind
-import Unsafe.Coerce
-
 
 mkFAlgebra ''Num
 mkFAlgebra ''Fractional
@@ -30,23 +26,43 @@ class (Floating a, Ord a) => FloatingOrd a
 instance {-#OVERLAPPABLE#-} (Floating a, Ord a) => FloatingOrd a
 mkFAlgebra ''FloatingOrd
 
--- type family DefaultAST a :: Type->Constraint
--- type instance DefaultAST Double = Floating
--- type instance DefaultAST Float  = Floating
--- type instance DefaultAST (a -> b) = DefaultAST b
--- type instance DefaultAST Int    = Num
---
--- type AST a = AST (DefaultAST a) a
-
--- expLogLogistic1 :: Double -> Double
--- expLogLogistic1 x = runHomAST $ logexpAST4 $ exp $ log $ 1/(1+exp(-Pure x))
---
--- expLogLogistic2 :: Double -> Double
--- expLogLogistic2 x = 1/(1+exp(-x))
-
 associator :: Num a => a -> a -> a -> a
 associator a1 a2 a3
     = ((a1+a2)+a3) - (a1+(a2+a3))
+
+--------------------------------------------------------------------------------
+
+instance Variety Num where
+    laws =
+        [ Law
+            { lawName = "associative"
+            , lhs = (var1+var2)+var3
+            , rhs = var1+(var2+var3)
+            }
+        , Law
+            { lawName = "commutative"
+            , lhs = var1*var2
+            , rhs = var2*var1
+            }
+        ]
+
+instance Approximate Num Float where
+    lawError (Law "associative" _ _) [a1,a2,a3] = abs $ ((a1+a2)+a3)-(a1+(a2+a3))
+
+----------------------------------------
+
+data Vec3 a = Vec3 {a::a, b::a, c::a}
+
+instance Num a => Num (Vec3 a) where
+    (Vec3 a1 a2 a3)+(Vec3 b1 b2 b3) = Vec3 (a1+b1) (a2+b2) (a3+b3)
+    (Vec3 a1 a2 a3)-(Vec3 b1 b2 b3) = Vec3 (a1-b1) (a2-b2) (a3-b3)
+    (Vec3 a1 a2 a3)*(Vec3 b1 b2 b3) = Vec3 (a1*b1) (a2*b2) (a3*b3)
+
+instance Approximate Num a => Approximate Num (Vec3 a) where
+    lawError law xs = Vec3
+        (lawError law $ map a xs)
+        (lawError law $ map b xs)
+        (lawError law $ map c xs)
 
 --------------------------------------------------------------------------------
 
@@ -61,7 +77,7 @@ transform1 :: forall alg x.
     ) => (AST alg x -> AST alg x)
       -> (AST alg x -> AST alg x)
       -> (x -> x)
-transform1 go f x = runHomAST $ go $ f (Pure x)
+transform1 go f x = runAST $ go $ f (Pure x)
 
 --------------------
 
@@ -77,7 +93,7 @@ transform2 :: forall alg x.
     ) => (AST alg x -> AST alg x)
       -> (AST alg x -> AST alg x -> AST alg x)
       -> (x -> x -> x)
-transform2 go f x1 x2 = runHomAST $ go $ toAST2 (f :: AST alg x -> AST alg x -> AST alg x) x1 x2
+transform2 go f x1 x2 = runAST $ go $ toAST2 (f :: AST alg x -> AST alg x -> AST alg x) x1 x2
 
 --------------------------------------------------------------------------------
 
@@ -183,16 +199,6 @@ constFunc x1 x2 = x1*2-(7-2)*x2
 -- ghci> fixAST foldConstants (constFunc var1 var2)
 -- ((var1*(fromInteger 2))-((fromInteger 5)*var2))
 
---------------------------------------------------------------------------------
-
-data Vec3 a = Vec3 a a a
-
-instance Num a => Num (Vec3 a) where
-    (Vec3 a1 a2 a3)+(Vec3 b1 b2 b3) = Vec3 (a1+b1) (a2+b2) (a3+b3)
-    (Vec3 a1 a2 a3)-(Vec3 b1 b2 b3) = Vec3 (a1-b1) (a2-b2) (a3-b3)
-    (Vec3 a1 a2 a3)*(Vec3 b1 b2 b3) = Vec3 (a1*b1) (a2*b2) (a3*b3)
-
-instance Approximate Num a => Approximate Num (Vec3 a)
 
 --------------------------------------------------------------------------------
 

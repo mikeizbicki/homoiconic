@@ -1,1 +1,13 @@
+dist
+*.hi
+*.o
+
 *.swp
+*.swo
+
+*.aux
+*.bbl
+*.bib
+*.blg
+*.log
+*.pdf

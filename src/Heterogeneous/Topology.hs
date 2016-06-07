@@ -36,10 +36,10 @@ class
     isNeighbor :: a -> (a,Neighborhood a) -> Bool
     isNeighbor a1 (a2,n) = (a1==a2) n
 
---     infixr 4 ==
---     (==) :: a -> a -> Logic a
---     (==) a1 a2 n = isNeighbor a1 (a2,n)
---
+    infixr 4 ==
+    (==) :: a -> a -> Logic a
+    (==) a1 a2 n = isNeighbor a1 (a2,n)
+
 --     infixr 4 /=
 --     (/=) :: a -> a -> Logic a
 --     (/=) = not (==)
