@@ -7,7 +7,7 @@
 
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
-module FAlgebra
+module Heterogeneous.FAlgebra
     where
 
 import Prelude
@@ -135,6 +135,8 @@ class FunctorTag (f::[AT]->Type->Type) where
 
 ----------------------------------------
 
+type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
+
 data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
     FreeTag  :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
     Free     :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
@@ -212,7 +214,8 @@ instance
     ( View alg1 (s++t) alg2 (s++t)
     ) => ValidView alg1 alg2 t s
 
-embedExpr :: forall alg1 alg2 cxt (s::[AT]) t a.
+{-
+embedAST :: forall alg1 alg2 cxt (s::[AT]) t a.
     ( FAlgebra alg1
 --     , FunctorTag (ValidView alg1 alg2 t) (Sig alg1)
     , FunctorTag (Sig alg1)
@@ -221,7 +224,7 @@ embedExpr :: forall alg1 alg2 cxt (s::[AT]) t a.
 --         (ValidView alg1 alg2 t)
         (Free (Sig alg1) t a)
         (Free (Sig alg2) t a)
-embedExpr = HaskTag go
+embedAST = HaskTag go
     where
         go :: forall (s::[AT]).
             ( FAlgebra alg1
@@ -239,12 +242,13 @@ embedExpr = HaskTag go
             (Free f) -> appFree' @s @t @a @alg2
                 $ Free
                 $ embedSig
---                 $ _ embedExpr f
-                $ fmapTag  embedExpr f
+--                 $ _ embedAST f
+                $ fmapTag  embedAST f
 -- --             (FreeTag f) -> appFree' @s @t @a @alg2
 -- --                 $ FreeTag
 -- --                 $ embedSig
--- --                 $ fmapTag @(ValidView alg1 alg2 t) embedExpr f
+-- --                 $ fmapTag @(ValidView alg1 alg2 t) embedAST f
+-}
 
 appFree :: forall (s::[AT]) t a alg. App s (Free (Sig alg) t a) -> Free (Sig alg) (s++t) a
 appFree = unsafeCoerce
@@ -274,11 +278,16 @@ class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
     embedSig          :: Sig alg1       t1  a -> Sig alg2       t2  a
     unsafeExtractSig  :: Sig alg2       t2  a -> Sig alg1       t1  a
 
---     embedExpr         :: Free (Sig alg1) t1 a -> Free (Sig alg2) t2 a
---     unsafeExtractExpr :: Free (Sig alg2) t2 a -> Free (Sig alg1) t1 a
+--     embedAST         :: Free (Sig alg1) t1 a -> Free (Sig alg2) t2 a
+--     unsafeExtractAST :: Free (Sig alg2) t2 a -> Free (Sig alg1) t1 a
 
 embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
 embedSigTag = embedSig
+
+unsafeExtractSigTag ::
+    ( View alg1 '[s] alg2 (s:t)
+    ) => Sig alg2 (s ': t) (Free (Sig alg2) t a) -> Sig alg1 '[s] (Free (Sig alg2) t a)
+unsafeExtractSigTag = unsafeExtractSig
 
 instance FAlgebra alg => View alg t alg t where
     embedSig = id
@@ -286,15 +295,13 @@ instance FAlgebra alg => View alg t alg t where
 
 --------------------------------------------------------------------------------
 
-type Expr (alg::Type->Constraint) t a = Free (Sig alg) t a
-
 data Law alg t = Law
     { lawName :: String
-    , lhs :: Expr alg t Var
-    , rhs :: Expr alg t Var
+    , lhs :: AST alg t Var
+    , rhs :: AST alg t Var
     }
 
-deriving instance Show (Expr alg t Var) => Show (Law alg t)
+deriving instance Show (AST alg t Var) => Show (Law alg t)
 
 newtype Var = Var String
     deriving (Eq)
@@ -302,20 +309,20 @@ newtype Var = Var String
 instance Show Var where
     show (Var v) = v
 
-var1 :: Expr alg '[] Var
+var1 :: AST alg '[] Var
 var1 = Pure $ Var "var1"
 
-var2 :: Expr alg '[] Var
+var2 :: AST alg '[] Var
 var2 = Pure $ Var "var2"
 
-var3 :: Expr alg '[] Var
+var3 :: AST alg '[] Var
 var3 = Pure $ Var "var3"
 
 --------------------
 
--- type Op0 alg = Expr alg Var
--- type Op1 alg = Expr alg Var -> Expr alg Var
--- type Op2 alg = Expr alg Var -> Expr alg Var -> Expr alg Var
+-- type Op0 alg = AST alg Var
+-- type Op1 alg = AST alg Var -> AST alg Var
+-- type Op2 alg = AST alg Var -> AST alg Var -> AST alg Var
 --
 -- commutative :: Op2 alg -> Law alg
 -- commutative f = Law
@@ -413,8 +420,8 @@ class FAlgebra alg => Variety alg where
 
 -- embedLaw :: View alg1 t1 alg2 t2 => Law alg1 t1 -> Law alg2 t2
 -- embedLaw law = law
---     { lhs = embedExpr $ lhs law
---     , rhs = embedExpr $ rhs law
+--     { lhs = embedAST $ lhs law
+--     , rhs = embedAST $ rhs law
 --     }
 --
 -- embedLaws :: View alg1 t1 alg2 t2 => [Law alg1 t1] -> [Law alg2 t2]
@@ -424,7 +431,7 @@ class FAlgebra alg => Variety alg where
 
 -- printAllLaws :: forall alg.
 --     ( Variety alg
---     , Show (Expr alg Var)
+--     , Show (AST alg Var)
 --     ) => IO ()
 -- printAllLaws = do
 --     forM (allLaws @alg) $ \(t,laws) -> do
@@ -438,12 +445,12 @@ class FAlgebra alg => Variety alg where
 
 printLaws :: forall alg.
     ( Variety alg
-    , Show (Expr alg '[] Var)
+    , Show (AST alg '[] Var)
     ) => Proxy alg -> IO ()
 printLaws palg = do
     forM_ (laws::[Law alg '[]]) printLaw
 
-printLaw :: Show (Expr alg t Var) => Law alg t -> IO ()
+printLaw :: Show (AST alg t Var) => Law alg t -> IO ()
 printLaw law = do
     putStrLn $ "  "++lawName law++":"
     putStrLn $ "    lhs: "++show (lhs law)
@@ -453,7 +460,7 @@ printLaw law = do
 
 type Testable a = (Eq a, Arbitrary a, Typeable a)
 
--- subVars :: (Functor (Sig alg t), FAlgebra alg) => Expr alg t Var -> [(Var,a)] -> Expr alg t a
+-- subVars :: (Functor (Sig alg t), FAlgebra alg) => AST alg t Var -> [(Var,a)] -> AST alg t a
 -- subVars expr varmap = fmap go expr
 --     where
 --         go var = case lookup var varmap of
@@ -518,11 +525,18 @@ mkFAlgebra algName = do
 
     -- validate input and extract the class functions
     qinfo <- reify algName
-    (cxt,decs) <- case qinfo of
+    (cxt,rawdecs) <- case qinfo of
         ClassI (ClassD cxt _ [_] _ decs) _ -> return (cxt,decs)
         _ -> error $ "mkFAlgebra called on "
             ++show algName
             ++", which is not a class of kind `Type -> Constraint`"
+
+    -- remove functions from decsraw that we can't handle
+    let go x = case x of
+            SigD _ sigType -> if not $ isVarT $ getReturnType sigType
+                then False
+                else True -- and $ map isVarT $ getArgs sigType
+    let decs = filter go rawdecs
 
     -- common variables we'll need later
     let varName = mkName "a"
@@ -626,16 +640,18 @@ mkFAlgebra algName = do
                             ( mkName $ "Sig_" ++ renameClassMethod sigName )
                             ( map VarP $ genericArgs sigType )
                         ]
-                        ( NormalB $ foldr
-                            (\a b -> AppE
-                                b
-                                ( AppE
-                                    ( VarE $ mkName "f")
-                                    ( VarE $ a)
-                                )
-                            )
-                            ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
-                            ( reverse $ genericArgs sigType )
+                        ( NormalB $ foldl
+                            AppE
+                            ( ConE $ mkName $ "Sig_"++renameClassMethod sigName )
+                            [ if not $ isConcrete argType
+                                then AppE
+                                    ( VarE $ mkName "f" )
+                                    ( VarE $ argName )
+                                else VarE argName
+                            | (argName,argType) <- zip
+                                (genericArgs sigType)
+                                (getArgs sigType)
+                            ]
                         )
                         []
                         | SigD sigName sigType <- decs
@@ -667,6 +683,16 @@ mkFAlgebra algName = do
                         )
                         []
                     | AppT (ConT predClass) predType <- cxt
+                    ]
+                    ++
+                    -- catch all error message
+                    [ Clause
+                        [ VarP $ mkName "f", VarP $ mkName "s" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "mape ("++nameBase algName++"): this should never happen" )
+                        )
+                        []
                     ]
                 )
             , FunD
@@ -856,13 +882,138 @@ mkFAlgebra algName = do
                         []
                     ]
                 )
+            ]
 
---             , TySynInstD
---                 ( mkName $ "ParentClasses" )
---                 ( TySynEqn
---                     [ ConT $ algName ]
---                     ( foldl (\b a -> AppT (AppT PromotedConsT (ConT a)) b) PromotedNilT parentClasses )
---                 )
+    -- construct pattern synonyms
+    let patSyns = concat $
+            [ if isVarT $ getReturnType sigType
+                then [ PatSynD
+                    ( mkName $ "AST_" ++ renameClassMethod sigName )
+                    ( PrefixPatSyn $ genericArgs sigType )
+                    ( ExplBidir
+                        [ Clause
+                            ( map VarP $ genericArgs sigType )
+                            ( NormalB $ AppE
+                                ( ConE $ mkName "Free" )
+                                ( AppE
+                                    ( VarE $ mkName "embedSig" )
+                                    ( foldl
+                                        AppE
+                                        ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
+                                        ( map VarE $ genericArgs sigType )
+                                    )
+                                )
+                            )
+                            []
+                        ]
+                    )
+                    ( ConP
+                        ( mkName "Free" )
+                        [ ViewP
+                            ( VarE $ mkName "unsafeExtractSig" )
+                            ( ConP
+                                ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                ( map VarP $ genericArgs sigType )
+                            )
+                        ]
+                    )
+                    ]
+                else
+                    [ PatSynSigD
+                        ( mkName $ "AST_" ++ renameClassMethod sigName )
+                        ( ForallT
+                            [ PlainTV $ mkName "alg"
+                            , PlainTV tagName
+                            , PlainTV varName
+                            ]
+                            [ AppT
+                                ( AppT
+                                    ( AppT
+                                        ( AppT
+                                            ( ConT $ mkName "View" )
+                                            ( ConT $ algName )
+                                        )
+                                        ( predType2tagType PromotedNilT $ getReturnType sigType )
+                                    )
+                                    ( VarT $ mkName "alg" )
+                                )
+                                ( predType2tagType (VarT tagName) $ getReturnType sigType )
+                            ]
+                            ( foldr
+                                (\a b -> AppT
+                                    ( AppT
+                                        ArrowT
+                                        ( AppT
+                                            ( AppT
+                                                ( AppT
+                                                    ( ConT $ mkName "Free" )
+                                                    ( AppT
+                                                        ( ConT $ mkName "Sig" )
+                                                        ( VarT $ mkName "alg" )
+                                                    )
+                                                )
+                                                ( if isVarT a
+                                                    then VarT tagName
+                                                    else predType2tagType (VarT tagName) a
+                                                )
+                                            )
+                                            ( VarT varName )
+                                        )
+                                    )
+                                    b
+                                )
+                                ( AppT
+                                    ( AppT
+                                        ( AppT
+                                            ( ConT $ mkName "Free" )
+                                            ( AppT
+                                                ( ConT $ mkName "Sig" )
+                                                ( VarT $ mkName "alg" )
+                                            )
+                                        )
+                                        ( if isVarT $ getReturnType sigType
+                                            then VarT tagName
+                                            else predType2tagType (VarT tagName) $ getReturnType sigType
+                                        )
+                                    )
+                                    ( VarT varName )
+                                )
+                                ( getArgs sigType )
+                            )
+                        )
+
+                    , PatSynD
+                        ( mkName $ "AST_" ++ renameClassMethod sigName )
+                        ( PrefixPatSyn $ genericArgs sigType )
+                        ( ExplBidir
+                            [ Clause
+                                ( map VarP $ genericArgs sigType )
+                                ( NormalB $ AppE
+                                    ( ConE $ mkName "FreeTag" )
+                                    ( AppE
+                                        ( VarE $ mkName "embedSigTag" )
+                                        ( foldl
+                                            AppE
+                                            ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
+                                            ( map VarE $ genericArgs sigType )
+                                        )
+                                    )
+                                )
+                                []
+                            ]
+                        )
+                        ( ConP
+                            ( mkName "FreeTag" )
+                            [ ViewP
+                                ( VarE $ mkName "unsafeExtractSigTag" )
+                                ( ConP
+                                    ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                    ( map VarP $ genericArgs sigType )
+                                )
+                            ]
+                        )
+                    ]
+            | SigD sigName sigType <- decs
             ]
 
     -- construct the overlapping Show instance
@@ -905,10 +1056,13 @@ mkFAlgebra algName = do
     let instShow = InstanceD
             ( Just Overlappable )
             (
-                (nub $ concat $ concat $
-                [   [   [ AppT
-                            ( ConT $ mkName "Show" )
-                            ( subAllVars varName t )
+                (nub $ concat $ concat $ concat $
+                [   [   [ case t of
+                            ( ConT _ ) -> []
+                            _          -> [ AppT
+                                ( ConT $ mkName "Show" )
+                                ( subAllVars varName t )
+                                ]
                         | t <- getReturnType sigType:getArgs sigType
                         ]
                     | SigD sigName sigType <- decs
@@ -1006,6 +1160,16 @@ mkFAlgebra algName = do
                         )
                         []
                         | SigD sigName sigType <- decs
+                    ]
+                    ++
+                    -- catch all error message
+                    [ Clause
+                        [ VarP $ mkName "s" ]
+                        ( NormalB $ AppE
+                            ( VarE $ mkName "error" )
+                            ( LitE $ StringL $ "show ("++nameBase algName++"): this should never happen" )
+                        )
+                        []
                     ]
                 )
             ]
@@ -1287,7 +1451,7 @@ mkFAlgebra algName = do
                 <- allcxt
             ]
 
-    return $ ats ++ instViews ++ [instFAlgebra,instShow,instShowOverlap,instFree]
+    return $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
 predType2str :: Pred -> String
 predType2str (ConT t) = nameBase t

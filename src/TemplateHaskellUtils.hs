@@ -44,6 +44,12 @@ isVarT :: TH.Type -> Bool
 isVarT (VarT _) = True
 isVarT _        = False
 
+isConcrete :: TH.Type -> Bool
+isConcrete (VarT _) = False
+isConcrete (ConT _) = True
+isConcrete (AppT a1 a2) = isConcrete a1 && isConcrete a2
+isConcrete t = error ("isConcrete: t="++show t)
+
 -- | Given a type that stores a function:
 -- return a list of the arguments to that function,
 -- and discard the return value.

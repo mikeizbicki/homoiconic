@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE CPP #-}
 
-module FAlgebraExample
+module Heterogeneous.Example
     where
 
 import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound)
@@ -23,7 +23,7 @@ import qualified Test.Tasty.SmallCheck as SC
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable)
 
-import FAlgebra
+import Heterogeneous.FAlgebra
 -- import FAlgebra98
 -- import Topology
 -- import Lattice
@@ -37,7 +37,7 @@ class Poset a where
 
 mkFAlgebra ''Poset
 
-instance cxt '[] => FunctorTag cxt (Sig Poset) where
+instance FunctorTag (Sig Poset) where
     fmapTag f (Sig_inf e1 e2) = Sig_inf
         (apHaskTag (Proxy::Proxy '[]) f e1)
         (apHaskTag (Proxy::Proxy '[]) f e2)
@@ -58,7 +58,6 @@ instance Variety Poset where
             }
         ]
 
-{-
 #define mkPoset(x) \
 instance Poset x where inf = P.min
 
@@ -573,4 +572,3 @@ z :: Free (Sig Space) '[TFloo] (Int,Int)
 z = Pure 2
 
 type instance TypeConstraints t a = ()
--}

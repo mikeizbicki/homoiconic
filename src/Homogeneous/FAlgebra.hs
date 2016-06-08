@@ -390,11 +390,6 @@ law2tasty :: forall (a :: Type) alg.
     , Testable a
     ) => Proxy a -> Law alg -> TestTree
 law2tasty p law = QC.testProperty (lawName law) $ law2property p law
--- law2tasty p law = QC.testProperty (lawName law) $ do
---     as <- infiniteListOf (arbitrary::Gen a)
---     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
---     return $ (runAST $ subVars (lhs law) varmap)
---           == (runAST $ subVars (rhs law) varmap)
 
 class2tasty :: forall alg a.
     ( Variety alg
