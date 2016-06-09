@@ -16,7 +16,7 @@ import Test.Tasty
 import Test.Tasty.Ingredients.Basic
 import Test.Tasty.Options
 import Test.Tasty.Runners
-import qualified Test.Tasty.SmallCheck as SC
+-- import qualified Test.Tasty.SmallCheck as SC
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck hiding (Testable)
 

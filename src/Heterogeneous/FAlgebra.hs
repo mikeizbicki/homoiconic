@@ -38,13 +38,15 @@ import Unsafe.Coerce
 
 --------------------------------------------------------------------------------
 
-type AT = Type
+type Tag = Type
 
-type family App (t::k) (a::Type) ::  Type
-type instance App '[]           a = a
-type instance App ((x::AT)':xs) a = App x (App xs a)
+type family AppTag (t::Tag) (a::Type)
 
-type family TypeConstraints (t::[AT]) (a::Type) :: Constraint
+type family AppTags (t::[Tag]) (a::Type) :: Type where
+    AppTags '[]       a = a
+    AppTags (x ': xs) a = AppTag x (AppTags xs a)
+
+type family TypeConstraints (t::[Tag]) (a::Type) :: Constraint
 
 
 type family Snoc (xs :: [k]) (y::k) where
@@ -68,28 +70,28 @@ appCoerce
     :: Proxy t
     -> Proxy s
     -> Proxy a
-    -> App t (App s a)
-    -> App (t `Snoc` s) a
+    -> AppTags t (AppTag s a)
+    -> AppTags (t `Snoc` s) a
 appCoerce _ _ _ = unsafeCoerce
 
 sigCoerce
     :: Proxy t
     -> Proxy s
     -> Proxy a
-    -> Sig alg t (App (t `Snoc` s) a)
-    -> Sig alg t (App  t (App s a))
+    -> Sig alg t (AppTags (t `Snoc` s) a)
+    -> Sig alg t (AppTags  t (AppTag s a))
 sigCoerce _ _ _ = unsafeCoerce
 
-runSigSnoc :: forall proxy alg a t u.
+runSig0Snoc :: forall proxy alg a t u.
     ( FAlgebra alg
-    , alg (App u a)
+    , alg (AppTag u a)
     ) => Proxy u
 --       -> Proxy u
       -> Proxy a
-      -> Sig alg t (App (t `Snoc` u) a)
-      -> App (t `Snoc` u) a
-runSigSnoc ps pa u
-    = appCoerce pt ps pa $ runSig (Proxy::Proxy (App u a)) $ sigCoerce pt ps pa u
+      -> Sig alg t (AppTags (t `Snoc` u) a)
+      -> AppTags (t `Snoc` u) a
+runSig0Snoc ps pa u
+    = appCoerce pt ps pa $ runSig0 (Proxy::Proxy (AppTag u a)) $ sigCoerce pt ps pa u
     where
         pt = Proxy :: Proxy t
 
@@ -97,19 +99,19 @@ type family Init (xs::[a]) where
     Init (x ': '[]) = '[]
     Init (x ': xs ) = x ': Init xs
 
-runSigTagSnoc :: forall proxy alg a s ttt t u.
+runSig1Snoc :: forall proxy alg a s ttt t u.
     ( FAlgebra alg
-    , alg (App u a)
-    ) => Proxy u
-      -> Proxy (s::AT)
-      -> Proxy (t::[AT])
+    , alg (AppTag u a)
+    ) => Proxy (u::Tag)
+      -> Proxy (s::Tag)
+      -> Proxy (t::[Tag])
       -> Proxy a
-      -> Sig alg ttt (App t a)
-      -> App s (App t a)
-runSigTagSnoc pu ps pt pa s
-    = unsafeCoerce $ runSigTag
-        (Proxy::Proxy (App u a))
-        (unsafeCoerce s :: Sig alg (s ': Init t) (App (Init t) (App u a)))
+      -> Sig alg ttt (AppTags t a)
+      -> AppTag s (AppTags t a)
+runSig1Snoc pu ps pt pa s
+    = unsafeCoerce $ runSig1
+        (Proxy::Proxy (AppTag u a))
+        (unsafeCoerce s :: Sig alg (s ': Init t) (AppTags (Init t) (AppTag u a)))
 
 unsafeCoerceSigTag :: proxy t' -> Sig alg t a -> Sig alg t' a
 unsafeCoerceSigTag _ = unsafeCoerce
@@ -118,41 +120,41 @@ unsafeCoerceSigTag _ = unsafeCoerce
 
 data HaskTag {-cxt-} a b where
     HaskTag ::
-        ( forall (s::[AT]). () --cxt s
+        ( forall (s::[Tag]). () --cxt s
             => Proxy s
 --             -> Proxy cxt
             -> Proxy a
             -> Proxy b
-            -> App s a
-            -> App s b
+            -> AppTags s a
+            -> AppTags s b
         ) -> HaskTag a b
 
-apHaskTag :: forall t a b . Proxy (t::[AT]) -> HaskTag a b -> App t a -> App t b
+apHaskTag :: forall t a b . Proxy (t::[Tag]) -> HaskTag a b -> AppTags t a -> AppTags t b
 apHaskTag pt (HaskTag f) = f pt (Proxy::Proxy a) (Proxy::Proxy b)
 
-class FunctorTag (f::[AT]->Type->Type) where
+class FunctorTag (f::[Tag]->Type->Type) where
     fmapTag :: HaskTag a b -> f t a -> f t b
 
-    fmapTag' :: Proxy s -> Proxy a -> Proxy b -> App s a -> App s b
+    fmapTag' :: Proxy s -> Proxy a -> Proxy b -> AppTags s a -> AppTags s b
 
 ----------------------------------------
 
 type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
 
-data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
-    FreeTag  :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
-    Free     :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
-    Pure     :: App t a -> Free f t a
+data Free (f::[Tag]->Type->Type) (t::[Tag]) (a::Type) where
+    Free1 :: TypeConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
+    Free0 :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
+    Pure  :: AppTags t a -> Free f t a
 
 instance
-    ( Show      (App t a)
+    ( Show      (AppTags t a)
     , Show      (f t (Free f t a))
     , ShowUntag (f t (Free f t a))
     ) => Show (Free f t a)
         where
-    show (FreeTag     f) = "("++show f++")"
-    show (Free        f) = "("++show f++")"
-    show (Pure        a) = show a
+    show (Free1 f) = "("++show f++")"
+    show (Free0 f) = "("++show f++")"
+    show (Pure  a) = show a
 
 type family ShowUntag (f::Type) :: Constraint where
     ShowUntag (f (s ':  t) (Free f (s ':  t) a))  = Show (f (s ':  t) (Free f          t  a))
@@ -161,10 +163,10 @@ type family ShowUntag (f::Type) :: Constraint where
 eval :: forall alg t a.
     ( FAlgebra alg
     , alg a
-    ) => Free (Sig alg) t a -> App t a
+    ) => Free (Sig alg) t a -> AppTags t a
 eval (Pure    a) = a
-eval (Free    s) = runSig    (Proxy::Proxy a) $ mape eval s
-eval (FreeTag s) = runSigTag (Proxy::Proxy a) $ mape eval s
+eval (Free0   s) = runSig0    (Proxy::Proxy a) $ mape eval s
+eval (Free1 s) = runSig1 (Proxy::Proxy a) $ mape eval s
 
 class NoCxt (a::k)
 instance NoCxt a
@@ -173,36 +175,36 @@ haskEval :: forall cxt alg t a.
     ( alg a
     , FAlgebra alg
     , FunctorTag (Sig alg)
-    ) => HaskTag (Free (Sig alg) t a) (App t a)
+    ) => HaskTag (Free (Sig alg) t a) (AppTags t a)
 haskEval = HaskTag go
     where
-        go :: forall (s::[AT]) .
+        go :: forall (s::[Tag]) .
             ( alg a
             , FAlgebra alg
             , FunctorTag (Sig alg)
             ) => Proxy s
 --               -> Proxy cxt
               -> Proxy (Free (Sig alg) t a)
-              -> Proxy (App t a)
-              -> App s (Free (Sig alg) t a)
-              -> App s (App t a)
+              -> Proxy (AppTags t a)
+              -> AppTags s (Free (Sig alg) t a)
+              -> AppTags s (AppTags t a)
         go _ _ _ expr = case appFree @s @t @a @alg expr of
             (Pure a) -> appApp
                 (Proxy::Proxy s)
                 (Proxy::Proxy t)
                 (Proxy::Proxy a)
                  a
-            (Free f) -> appApp
+            (Free0 f) -> appApp
                     (Proxy::Proxy s)
                     (Proxy::Proxy t)
                     (Proxy::Proxy a)
-                $ runSig (Proxy::Proxy a)
+                $ runSig0 (Proxy::Proxy a)
                 $ fmapTag haskEval f
-            (FreeTag f) -> appApp
+            (Free1 f) -> appApp
                     (Proxy::Proxy s)
                     (Proxy::Proxy t)
                     (Proxy::Proxy a)
-                $ runSigTag (Proxy::Proxy a)
+                $ runSig1 (Proxy::Proxy a)
                 $ fmapTag haskEval f
 
 class
@@ -210,14 +212,14 @@ class
     ) => ValidView
         (alg1::Type->Constraint)
         (alg2::Type->Constraint)
-        (t::[AT])
-        (s::[AT])
+        (t::[Tag])
+        (s::[Tag])
 instance
     ( View alg1 (s++t) alg2 (s++t)
     ) => ValidView alg1 alg2 t s
 
 {-
-embedAST :: forall alg1 alg2 cxt (s::[AT]) t a.
+embedAST :: forall alg1 alg2 cxt (s::[Tag]) t a.
     ( FAlgebra alg1
 --     , FunctorTag (ValidView alg1 alg2 t) (Sig alg1)
     , FunctorTag (Sig alg1)
@@ -228,7 +230,7 @@ embedAST :: forall alg1 alg2 cxt (s::[AT]) t a.
         (Free (Sig alg2) t a)
 embedAST = HaskTag go
     where
-        go :: forall (s::[AT]).
+        go :: forall (s::[Tag]).
             ( FAlgebra alg1
             , FunctorTag (Sig alg1)
 --             , FunctorTag (ValidView alg1 alg2 t) (Sig alg1)
@@ -237,8 +239,8 @@ embedAST = HaskTag go
 --               -> Proxy (ValidView alg1 alg2 t)
               -> Proxy (Free (Sig alg1) t a)
               -> Proxy (Free (Sig alg2) t a)
-              -> App s (Free (Sig alg1) t a)
-              -> App s (Free (Sig alg2) t a)
+              -> AppTags s (Free (Sig alg1) t a)
+              -> AppTags s (Free (Sig alg2) t a)
         go _ _ _ expr = case appFree @s @t @a @alg1 expr of
             (Pure a) -> appFree' @s @t @a @alg2 (Pure a)
             (Free f) -> appFree' @s @t @a @alg2
@@ -246,33 +248,33 @@ embedAST = HaskTag go
                 $ embedSig
 --                 $ _ embedAST f
                 $ fmapTag  embedAST f
--- --             (FreeTag f) -> appFree' @s @t @a @alg2
--- --                 $ FreeTag
+-- --             (Free1 f) -> appFree' @s @t @a @alg2
+-- --                 $ Free1
 -- --                 $ embedSig
 -- --                 $ fmapTag @(ValidView alg1 alg2 t) embedAST f
 -}
 
-appFree :: forall (s::[AT]) t a alg. App s (Free (Sig alg) t a) -> Free (Sig alg) (s++t) a
+appFree :: forall (s::[Tag]) t a alg. AppTags s (Free (Sig alg) t a) -> Free (Sig alg) (s++t) a
 appFree = unsafeCoerce
 
-appFree' :: forall (s::[AT]) t a alg. Free (Sig alg) (s++t) a -> App s (Free (Sig alg) t a)
+appFree' :: forall (s::[Tag]) t a alg. Free (Sig alg) (s++t) a -> AppTags s (Free (Sig alg) t a)
 appFree' = unsafeCoerce
 
-appApp :: Proxy (s::[AT]) -> Proxy t -> Proxy a -> App (s++t) a -> App s (App t a)
+appApp :: Proxy (s::[Tag]) -> Proxy t -> Proxy a -> AppTags (s++t) a -> AppTags s (AppTags t a)
 appApp _ _ _ = unsafeCoerce
 
 ----------------------------------------
 
 class Typeable alg => FAlgebra (alg::Type->Constraint) where
-    data Sig alg (t::[AT]) a
+    data Sig alg (t::[Tag]) a
 
-    runSigTag :: alg a => proxy a -> Sig alg (s ':  t) (App t a) -> App (s ':  t) a
-    runSig    :: alg a => proxy a -> Sig alg        t  (App t a) -> App        t  a
+    runSig1 :: alg a => proxy a -> Sig alg (s ':  t) (AppTags t a) -> AppTags (s ':  t) a
+    runSig0    :: alg a => proxy a -> Sig alg        t  (AppTags t a) -> AppTags        t  a
 
     mape :: (TypeConstraints t' a)
-         => (forall s. Free (Sig alg') s a -> App s a)
+         => (forall s. Free (Sig alg') s a -> AppTags s a)
          -> Sig alg t (Free (Sig alg') t' a)
-         -> Sig alg t (App t' a)
+         -> Sig alg t (AppTags t' a)
 
 --     mapf :: (TypeConstraints t' a)
 --          => (forall s. Free (Sig alg') s a -> Free (Sig alg') s a)
@@ -375,7 +377,7 @@ var3 = Pure $ Var "var3"
 
 -- type family AncestorClasses (t::Type->Constraint) :: [Type -> Constraint]
 
-type ClassSig = (Type->Constraint,[AT])
+type ClassSig = (Type->Constraint,[Tag])
 
 type family ParentClasses (alg::ClassSig) :: [ClassSig]
 
@@ -516,9 +518,9 @@ mkAT atName = do
             [NormalC tagName []]
             []
 
-    -- construct the App instance
+    -- construct the AppTags instance
     let instApp = TySynInstD
-            ( mkName "App" )
+            ( mkName "AppTag" )
             ( TySynEqn
                 [ ConT tagName, VarT varName ]
                 ( AppT
@@ -708,7 +710,7 @@ mkFAlgebra algName = do
                     ]
                 )
             , FunD
-                ( mkName "runSigTag" )
+                ( mkName "runSig1" )
                 (
                     -- evaluate functions
                     ( catMaybes [ case getReturnType sigType of
@@ -761,7 +763,7 @@ mkFAlgebra algName = do
                                 )
                                 ( AppT
                                     ( AppT
-                                        ( ConT $ mkName "App" )
+                                        ( ConT $ mkName "AppTags" )
                                         ( VarT $ mkName "t" )
                                     )
                                     ( VarT $ mkName "a" )
@@ -771,7 +773,7 @@ mkFAlgebra algName = do
                         ( NormalB $ case predType of
                             (VarT _) -> AppE
                                 ( AppE
-                                    ( VarE $ mkName "runSigTag" )
+                                    ( VarE $ mkName "runSig1" )
                                     ( VarE $ mkName "p" )
 --                                     ( case predType of
 --                                         (VarT _)  -> VarE $ mkName "p"
@@ -789,7 +791,7 @@ mkFAlgebra algName = do
                                     ( AppE
                                         ( AppE
                                             ( AppE
-                                                ( VarE $ mkName "runSigTagSnoc" )
+                                                ( VarE $ mkName "runSig1Snoc" )
                                                 ( mkProxyE $ pred2tagSingleton predType )
                                             )
                                             ( mkProxyE $ VarT $ mkName "s" )
@@ -809,13 +811,13 @@ mkFAlgebra algName = do
                         [ VarP $ mkName "p", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "runSigTag ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "runSig1 ("++nameBase algName++"): this should never happen" )
                         )
                         []
                     ]
                 )
             , FunD
-                ( mkName "runSig" )
+                ( mkName "runSig0" )
                 (
                     -- evaluate functions
                     ( catMaybes [ case getReturnType sigType of
@@ -854,7 +856,7 @@ mkFAlgebra algName = do
                         ( NormalB $  case predType of
                             (VarT _) -> AppE
                                 ( AppE
-                                    ( VarE $ mkName "runSig" )
+                                    ( VarE $ mkName "runSig0" )
                                     ( VarE $ mkName "p" )
                                 )
                                 ( VarE $ mkName "s" )
@@ -862,7 +864,7 @@ mkFAlgebra algName = do
                             _ -> AppE
                                 ( AppE
                                     ( AppE
-                                        ( VarE $ mkName "runSigSnoc" )
+                                        ( VarE $ mkName "runSig0Snoc" )
                                         ( SigE
                                             ( ConE $ mkName "Proxy" )
                                             ( AppT
@@ -890,7 +892,7 @@ mkFAlgebra algName = do
                         [ VarP $ mkName "p", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "runSig ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "runSig0 ("++nameBase algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -973,7 +975,7 @@ mkFAlgebra algName = do
                             [ Clause
                                 ( map VarP $ genericArgs sigType )
                                 ( NormalB $ AppE
-                                    ( ConE $ mkName "Free" )
+                                    ( ConE $ mkName "Free0" )
                                     ( AppE
                                         ( VarE $ mkName "embedSig" )
                                         ( foldl
@@ -987,7 +989,7 @@ mkFAlgebra algName = do
                             ]
                         )
                         ( ConP
-                            ( mkName "Free" )
+                            ( mkName "Free0" )
                             [ ViewP
                                 ( VarE $ mkName "unsafeExtractSigTag0" )
                                 ( ConP
@@ -1068,7 +1070,7 @@ mkFAlgebra algName = do
                             [ Clause
                                 ( map VarP $ genericArgs sigType )
                                 ( NormalB $ AppE
-                                    ( ConE $ mkName "FreeTag" )
+                                    ( ConE $ mkName "Free1" )
                                     ( AppE
                                         ( VarE $ mkName "embedSigTag" )
                                         ( foldl
@@ -1082,7 +1084,7 @@ mkFAlgebra algName = do
                             ]
                         )
                         ( ConP
-                            ( mkName "FreeTag" )
+                            ( mkName "Free1" )
                             [ ViewP
                                 ( VarE $ mkName "unsafeExtractSigTag" )
                                 ( ConP
@@ -1343,7 +1345,7 @@ mkFAlgebra algName = do
                         ( map VarP $ genericArgs sigType )
                         ( NormalB $ case getReturnType sigType of
                             (VarT _) -> AppE
-                                ( ConE $ mkName "Free" )
+                                ( ConE $ mkName "Free0" )
                                 ( AppE
                                     ( VarE $ mkName "embedSig" )
                                     ( foldl AppE (ConE $ mkName $ "Sig_"++renameClassMethod sigName)
@@ -1351,7 +1353,7 @@ mkFAlgebra algName = do
                                     )
                                 )
                             _ -> AppE
-                                ( ConE $ mkName "FreeTag")
+                                ( ConE $ mkName "Free1")
                                 ( AppE
                                     ( VarE $ mkName "embedSigTag" )
                                     ( foldl AppE (ConE $ mkName $ "Sig_"++renameClassMethod sigName)

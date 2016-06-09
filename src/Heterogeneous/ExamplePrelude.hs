@@ -131,7 +131,7 @@ instance Floating a => Vector (Vec3 a) where
 --------------------------------------------------------------------------------
 
 logexpAST1 :: AST Floating '[] a -> AST Floating '[] a
-logexpAST1 (Free (Sig_log (Free (Sig_exp a)))) = a
+logexpAST1 (Free0 (Sig_log (Free0 (Sig_exp a)))) = a
 
 -- logexpAST2 :: forall t alg a. View Floating t alg '[] => AST alg '[] a -> AST alg '[] a
 -- logexpAST2 (Free (unsafeExtractSig -> Sig_log a)) = a
@@ -160,7 +160,7 @@ logexpAST4 (AST_log (AST_exp a)) = a
 
 logexpAST5 :: View Floating '[] alg t => AST alg t a -> AST alg t a
 logexpAST5 (AST_log (AST_exp a)) = a
-logexpAST5 (Free f) = Free $ fmapAST logexpAST4 f
+logexpAST5 (Free0 f) = Free0 $ fmapAST logexpAST4 f
 
 fmapAST :: (forall s. View Floating '[] alg s => AST alg s a -> AST alg s a) -> Sig alg t (AST alg t a) -> Sig alg t (AST alg t a)
 fmapAST f = undefined

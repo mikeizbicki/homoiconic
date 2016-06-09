@@ -201,6 +201,14 @@ constFunc x1 x2 = x1*2+(7+2)*x2
 
 --------------------------------------------------------------------------------
 
+instance
+    ( FAlgebra alg
+    , Show (Sig alg (Free (Sig alg) Var))
+    ) => Show (AST alg Var -> AST alg Var) where
+    show f = show (f var1)
+
+--------------------------------------------------------------------------------
+
 -- type family Scalar a
 -- -- mkAT ''Scalar
 --
