@@ -31,7 +31,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\usepackage{amsmath}
+\usepackage{amsmath,amsfonts}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -44,6 +44,7 @@
 \makeatother
 \theoremstyle{definition}
 \newtheorem{problem}{Problem}
+\newtheorem{defn}{Definition}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -77,6 +78,15 @@
   publisher={ACM}
 }
 
+@inproceedings{jones2001playing,
+  title={Playing by the rules: rewriting as a practical optimisation technique in GHC},
+  author={Jones, Simon Peyton and Tolmach, Andrew and Hoare, Tony},
+  booktitle={Haskell workshop},
+  volume={1},
+  pages={203--233},
+  year={2001}
+}
+
 @book{higham2002,
   title={Accuracy and stability of numerical algorithms},
   author={Higham, Nicholas J},
@@ -108,6 +118,20 @@
   booktitle={Proceedings of the 32nd International Conference on Machine Learning (ICML-15)},
   pages={1737--1746},
   year={2015}
+}
+
+@misc{viewpatterns,
+  author = {GHC Wiki},
+  title = {View patterns: lightweight views for Haskell},
+  url = {https://ghc.haskell.org/trac/ghc/wiki/ViewPatterns},
+  note = {Accessed: 2016-06-09}
+}
+
+@misc{patternsynonyms,
+  author = {GHC Wiki},
+  title = {Pattern Synonyms},
+  url = {https://ghc.haskell.org/trac/ghc/wiki/PatternSynonyms},
+  note = {Accessed: 2016-06-09}
 }
 \end{filecontents}
 \immediate\write18{bibtex paper}
@@ -148,13 +172,11 @@
 \maketitle
 
 \begin{abstract}
-We say a function is \emph{homoiconic} if it can be converted into an isomorphic abstract syntax tree (AST),
-and the resulting AST can be converted back into the original function.
-Homoiconicity is a useful property because it lets libraries implement arbitrary program transformations on these functions by manipulating the AST.
-This pearl shows that many Haskell functions are homoiconic.
-The technique does not rely on template Haskell,
-and so works on expressions available at either compile or run time.
-To motivate this homoiconicity,
+We say a function is \emph{homoiconic} if it can be converted into an isomorphic abstract syntax tree (AST).
+This AST can then be manipulated arbitrarily and converted back into a function.
+Template Haskell gives a \emph{compile time} form of homoiconicity to Haskell programs;
+but in this pearl, we demonstrate another form of homoiconicity that relies on polymorphism and GHC's type programming capabilities.
+To motivate our technique,
 we construct a small library that automatically transforms numerically unstable code into stable code.
 
 %This pearl shows that many Haskell functions are \emph{homoiconic}.
@@ -227,10 +249,10 @@ Therefore, on an input of $-710$,
 |logLogisitic| will take the |log| of 0,
 returning negative infinity when the true answer is actually very close to $-710$.
 Such an inaccurate answer is unacceptable,
-so our function must be rewritten.
+so the function must be rewritten.
 
 But like all good programmers, you're lazy.
-Your machine learning library will contain thousands of numeric functions,
+Your machine learning library will contain hundreds of numeric functions,
 all of which will need to be carefully written to avoid numeric instabilities.
 What a maintenance nightmare!
 Soon you start daydreaming about a function
@@ -245,37 +267,76 @@ logLogistic2 x = stabilize $ log(1/(1+exp(-x)))
 \end{lstlisting}
 %stopzone
 
-In this pearl, we see how to write functions like |stabilize|.
-The key observation is that certain Haskell functions can be converted into an isomorphic abstract syntax tree (AST).
-The |stabilize| function uses this fact to convert its input function into an AST;
-manipulates that AST to remove numerical stabilities;
-then converts the AST back into a callable function.
+In this pearl, we see how to write functions like |stabilize| that perform program transformations.
+These functions follow the following pattern.
+First, convert the input function into an abstract syntax tree (AST).
+Next, manipulate the AST to remove the numerical instabilities.
+Finally, convert the AST back into a callable function.
+%The key observation is that certain Haskell functions are \emph{homoiconic}.
+%That is, we can convert them into isomorphic abstract syntax trees (ASTs).
+%The key observation is that certain Haskell functions (which we call \emph{homogeneous} and \emph{heterogeneous}) can be converted into equivalent abstract syntax trees (ASTs).
+%The |stabilize| function converts its input function into an AST,
+%then manipulate that AST to remove numerical stabilities,
+%and finally convert the AST back into a callable function.
 
-In Section \ref{sec:homogeneous}, we introduce the idea of a \emph{homogeneous} function and show that these functions are homoiconic.
-In Section \ref{sec:stabilize}, we use the construction above to implement several versions of the |stabilize| function.
-In Section \ref{sec:heterogeneous}, we introduce the idea of \emph{heterogeneous} functions and show that they are also homoiconic.
-Finally, we conclude by introducing a Haskell package called {\ttfamily homoiconic} that makes it easy for you to .
+The main idea of the |homoiconic| library is that we can associate with every type class an FAlgebra that captures the algebraic structure of that class.
+
+In Section \ref{sec:homogeneous},
+%In Section \ref{sec:homogeneous}, we introduce the idea of a \emph{homogeneous} function and show that these functions are homoiconic.
+%In Section \ref{sec:stabilize}, we use the construction above to implement several versions of the |stabilize| function.
+%In Section \ref{sec:heterogeneous}, we introduce the idea of \emph{heterogeneous} functions and show that they are also homoiconic.
+%Finally, we conclude by introducing a Haskell package called {\ttfamily homoiconic} that makes it easy for you to .
 
 \section{Homogeneous functions are homoiconic}
 \label{sec:homogeneous}
-We call a function \emph{homogeneous} if:
+
+In this section we first define homogeneous type classes and functions.
+There are two intuitive ideas for homogeneous type classes.
+First, they have ASTs that contain only a single type variable.
+Second, we can construct an FAlgebra for these type classes.
+
+\begin{defn}
+We call a type class homogeneous if:
 \begin{enumerate}
 \item
-%The function's return type and all of its parameters are the same type variable.
-The function is polymorphic in its return type.
+it has a single parameter; and
 \item
-The function's parameters are either the same as the return type or they are concrete.
-\item
-The constraints contain exactly one type class, and
-that type class has exactly one parameter,
-which is the function's return type.
+the class's constraints contain only homogeneous type classes applied directly to the parameter.
 \end{enumerate}
-The |logLogistic1| function is homogeneous.
-Figure \ref{code:ghc} shows many more examples from GHC's numeric and ordering hierarchies.
+For example, all of the classes in the Prelude are homogeneous.
+Some of these classes are shown in Figure \ref{code:ghc}.
+Figure 2 (near the end of the paper) shows type classes which are not homogeneous due to the presence of type families in the constraints.
+\end{defn}
 
-In this section, we will show that every type class has an associated monad representing the abstract syntax tree of the class's homogeneous functions.
-Our construction is closely related to other constructions involving initial algebras, FAlgebras, and free monads.
-See for example \cite{swierstra2008}.
+\begin{defn}
+We call a function homogeneous if:
+\begin{enumerate}
+\item
+there is exactly one type variable in the signature, which we denote by |a|;
+\item
+each of the function's parameters is either
+\begin{enumerate}
+\item
+|a|, or
+\item
+concrete;
+\end{enumerate}
+\item
+the function's return type is |a|; and
+\item
+the constraints contain only homogeneous type classes applied to |a|.
+\end{enumerate}
+The |logLogistic1| function is homogeneous,
+and Figure \ref{code:ghc} shows many more examples taken from the Prelude's numeric hierarchy.
+\end{defn}
+
+%In this section, we will show that every type class has an associated monad representing the abstract syntax tree of the class's homogeneous functions.
+%Our construction is closely related to other constructions involving initial algebras, FAlgebras, and free monads.
+%See for example \cite{swierstra2008}.
+
+%Our goal in this section is to convert homogeneous functions into ASTs.
+%These ASTs will contain only a single parameter type, and so are relatively simple.
+%The construction will use FAlgebras\cite{swierstra2008}.
 
 \begin{figure}
 \begin{lstlisting}
@@ -315,9 +376,10 @@ class Eq a => Ord a where
 \label{code:ghc}
 \end{figure}
 
+
 \subsection{A type class for FAlgebras}
-FAlgebras are a technique used in the mathematical fields of universal algebra and category theory for defining algebraic structures.
-We represent an FAlgebra with the following type class.
+Every homogeneous type class has an associated FAlgebra.
+We represent this FAlgebra with the following type class.
 \begin{lstlisting}
 class Functor (Sig alg) => FAlgebra alg where
     data Sig alg a
@@ -327,7 +389,7 @@ The |FAlgebra| class is unusual in that its parameter has kind |Type->Constraint
 This means that instances of |FAlgebra| will be other type classes
 (instead of types or type constructors).
 
-It is easiest to understand instances of |FAlgebra| by walking through an example.
+It is easiest to understand the |FAlgebra| class by walking through an example instance.
 Below is the instance for |Fractional|.
 \begin{lstlisting}
 instance FAlgebra Fractional where
@@ -345,23 +407,26 @@ instance FAlgebra Fractional where
 The data family |Sig| encodes what mathematicians call the \emph{signature} of the FAlgebra.
 The signature defines all the operations that can be performed on an FAlgebra.
 Each |Sig| data instance can have many constructors,
-which can be divided into two categories.
-First, there should be one constructor for each homogeneous class function.
-This constructor should have the same parameters as the function.
-For the |Fractional| example, we've defined the three constructors |Sig_div|, |Sig_recip|, and |Sig_fromRational| for the three member functions |(/)|, |recip|, and |fromRational|.
-Second, there should be a constructor for each superclass.
-This constructor should store the |Sig| of the corresponding superclass.
+and these constructors come in two flavors.
+First is the \emph{function constructor}.
+There should be one function constructor for each homogeneous class function, and
+this constructor should have the same parameters as the function.
+For the |Fractional| example, we've defined the three constructors |Sig_div|, |Sig_recip|, and |Sig_fromRational| for the three member functions |(/)|, |recip|, and |fromRational| respectively.
+The second constructor flavor is the \emph{superclass constructor}.
+There should be one superclass constructor for each superclass, and
+this constructor should store the |Sig| of the corresponding superclass.
 For the |Fractional| example, we have the |Sig_Fractional_Num| constructor corresponding to the |Num| superclass.
 
 The |runSig| class method gives us a way to evaluate any |Sig|.
+Mathematicians sometimes call this function simply an \emph{algebra}.
 For each function constructor, |runSig| should call the corresponding function.
 For each superclass constructor, |runSig| recursively calls |runSig| on the superclass's |Sig|.
+This is exactly what the |Fractional| instance above does.
 
 The F in FAlgebra comes from the fact that every signature is actually a functor.
-In Haskell, we encode this by enforcing that |Sig alg| must be an instance of the |Functor| class in order to create a valid |FAlgebra| instance for |alg|.
+In Haskell, we encode this by enforcing that |Sig alg| must be an instance of the |Functor| class.
 As usual, there is only a single valid |Functor| instance.
 For |Fractional|, it is:
-
 \begin{lstlisting}
 instance Functor (Sig Fractional) where
     fmap f (Sig_div a1 a2) = Sig_div (f a1) (f a2)
@@ -369,16 +434,12 @@ instance Functor (Sig Fractional) where
     fmap f (Sig_fromRational r) = Sig_fromRational r
     fmap f (Sig_Fractional_Num s) = fmap f s
 \end{lstlisting}
-As usual, there is only a single valid |Functor| instance.
-There are multiple valid |Foldable| instances depending on the order in which |foldr| considers the constructors' parameters,
-but for our purposes the order is not important.
 
 \subsection{Constructing the AST}
 
-For every FAlgebra, there is an associated AST with the corresponding algebraic structure.
+For every FAlgebra, there is an associated AST.
 This AST is sometimes called an \emph{initial algebra},
 and has a standard construction via the \emph{free monad}.
-
 In Haskell, the free monad is defined as
 \begin{lstlisting}
 data Free f a
@@ -399,7 +460,8 @@ and the parameters to the constructor will contain ASTs nested recursively.
 For example, consider the expression |(1+2)+3|.
 We can create a corresponding AST using |Num|'s |FAlgebra| instance.
 \begin{lstlisting}
-Free
+expr1 :: AST Num Double
+expr1 = Free
   (Sig_plus
     (Free
       (Sig_plus
@@ -410,10 +472,13 @@ Free
     (Pure 3)
   )
 \end{lstlisting}
+The type signature is not necessary, but shown for clarity.
+
 We can also create a corresponding AST for any class that has |Num| as a superclass.
 Below is the same expression encoded using |Floating|'s |FAlgebra| instance.
 \begin{lstlisting}
-Free
+expr2 :: AST Floating Double
+expr2 = Free
   (Sig_Floating_Fractional
     (Sig_Fractional_Num
       (Sig_plus
@@ -448,8 +513,11 @@ class
 \end{lstlisting}
 Instances of the |View| class should satisfy the property that |alg1| is either equal to |alg2| or is a superclass of |alg2|, and
 all such relationships should have a corresponding instance.
-For example, |Num| is a superclass of |Floating|,
-so we should have a |View Num Floating| instance.
+This property ensures that the |Sig alg1 a| data instance can always be embedded into a |Sig alg2 a| data instance (via a chain of superclass constructors).
+It is only sometimes true that we can extract a |Sig alg1 a| from a |Sig alg2 a|,
+so the function is partial and hence labeled |unsafe|.
+For example,
+we have the following |View Num Floating| instance because |Num| is a superclass of |Floating| via |Fractional|.
 \begin{lstlisting}
 instance View Num Floating
     embedSig s
@@ -457,14 +525,15 @@ instance View Num Floating
     unsafeExtractSig (Sig_Fractional_Floating s)
         = unsafeExtractSig s
 \end{lstlisting}
-Because of this property, we know that the |Sig alg1 a| data instance can always be embedded into a |Sig alg2 a| data instance.
-But it is only sometimes true that we can extract a |Sig alg1 a|,
-which is why the corresponding function is labeled |unsafe|.
+The |embedSig| function shows us how to embed a |Sig Num| into a |Sig Floating|;
+notice that the inner call to |embedSig| relies on a |View Num Fractional| instance also existing.
+The |unsafeExtractSig| function extracts the |Sig Num| instance only if the input contains one.
 
 Armed with the |View| class, we can create a uniform representation for all class's ASTs.
 The expression |(1+2)+3| can now be represented as:
 \begin{lstlisting}
-Free
+expr3 :: View Floating alg => AST alg Double
+expr3 = Free
   (embedSig
     (Sig_plus
       (Free
@@ -482,33 +551,39 @@ Free
 
 Using our uniform representation of an AST,
 we can make the AST itself an instance of any |FAlgebra| type class.
-Again, we'll approach the procedure by example.
-We can write a |Num| instance for |AST Num a| as:
+As an example, the |Fractional| instance is shown below.
 \begin{lstlisting}
-instance View Num alg => Num (Free (Sig alg) a)
-        where
-    (+) e1 e2 = Free (embedSig (Sig_plus e1 e2))
+instance View Fractional alg
+    => Fractional (AST alg a) where
+    (/) e1 e2 = Free $ embedSig $ Sig_div e1 e2
+    recip e   = Free $ embedSig $ Sig_recip e
+    fromRational r
+        = Free $ embedSig $ Sig_fromRational r
 \end{lstlisting}
 For each function in the type class,
 we simply embed the function's constructor into the AST by prepending the expression |Free $ embedSig $|.
-The |Fractional| and |Floating| instances follow a similar pattern.
 
 We can easily create ASTs using these instances.
 The |Num| AST can be created with the expression
 \begin{lstlisting}
-(1+2)+3 :: AST Num a
+expr4 :: AST Num Double
+expr4 = (1+2)+3
 \end{lstlisting}
 And the |Floating| AST can be created by just changing the type signature.
 \begin{lstlisting}
-(1+2)+3 :: AST Floating a
+expr5 = AST Floating Double
+expr5 = (1+2)+3
 \end{lstlisting}
+Notice that in these examples we didn't embed the numbers using the |Pure| constructor.
+Since |AST Num Double| is an instance of |Num|,
+GHC will internally call the |fromInteger| to embed the number.
 
 \subsection{Showing the AST}
 Now that we can create our ASTs, we want to actually do something with them!
 The simplest task is to convert them into a |String| for display.
 This is an easy procedure of writing |Show| instances for the |Sig| and |Free| data types.
 
-The are no tricks in the |Show| instance for the |Sig| instance.
+There are no tricks in the |Show| instance for |Sig|.
 The instance for |Fractional| is shown below.
 \begin{lstlisting}
 instance Show a => Show (Sig Fractional a) where
@@ -524,26 +599,82 @@ For each superclass constructor, we simply recursively call show on the supercla
 The |Free| type's |Show| instance is similarly straightforward.
 \begin{lstlisting}
 instance (Show a, Show (f (Free f a)))
-    => Show (Free f a)
-        where
+    => Show (Free f a) where
     show (Pure a) = show a
     show (Free f) = "("++show f++")"
 \end{lstlisting}
 If the syntax tree contains only a single leaf, we just show that leaf.
 If the syntax tree contains a branch,
-then put parenthesis around the branch so that we don't lose information about the order of operations, and show the functor in the middle.
+then put parenthesis around the branch,
+and show the functor (i.e. the |Sig|) in the middle.
 
-Now, when we type an expression into ghci,
+Now, when we type a numeric expression into ghci without a type signature,
+we evaluate the expression like normal.
 \begin{lstlisting}
 ghci> (1+2)+3
 6
-ghci> (1+2)+3 :: AST Floating Int
-(1+2)+3
 \end{lstlisting}
+But when we add a type signature,
+we get the full AST.
+\begin{lstlisting}
+ghci> (1+2)+3 :: AST Floating Double
+(((fromInteger 1)+(fromInteger 2))+(fromInteger 3))
+\end{lstlisting}
+Again, the way ghci works, all integer literals automatically have |fromInteger| applied to them,
+which is why this function appears in the AST above.
+It would be easy to create a pretty printer that removes these function calls and excess parentheses,
+but this is left as an exercise for the reader.
+
+\subsection{Showing functions}
+Reconsider our |logLogistic1| function.
+It has type
+\begin{lstlisting}
+logLogistic1 :: Floating a => a -> a
+\end{lstlisting}
+What happens if we specialize |a| to |AST Floating Double|?
+We get a peek at the functions internals.
+\begin{lstlisting}
+ghci> logLogistic1 1 :: AST Floating Double
+(log ((fromInteger 1)/((fromInteger 1)+(exp
+    (negate (fromInteger 1))))))
+\end{lstlisting}
+We don't just have to input single numbers;
+we can also input full expressions.
+These expressions will also get displayed,
+intermixed with the original function.
+\begin{lstlisting}
+ghci> logLogistic1 (1*3+4) :: AST Floating Double
+(log ((fromInteger 1)/((fromInteger 1)+(exp
+    (negate (((fromInteger 1)*(fromInteger 3))
+    +(fromInteger 4)))))))
+\end{lstlisting}
+%\begin{lstlisting}
+%ghci> logLogistic1 (logLogistic1 1) :: AST Floating Double
+%(log ((fromInteger 1)/((fromInteger 1)+(exp
+    %(negate (log ((fromInteger 1)/((fromInteger 1)
+    %+(exp (negate (fromInteger 1)))))))))))
+%\end{lstlisting}
+To more conveniently display functions,
+we need a variable type.
+\begin{lstlisting}
+newtype Var = Var String
+
+var1 :: AST alg Var
+var1 = Pure "var1"
+\end{lstlisting}
+Now we can show the function properly.
+\begin{lstlisting}
+ghci> logLogistic1 var1 :: AST Floating Var
+(log ((fromInteger 1)/((fromInteger 1)+(exp (negate
+    var1)))))
+\end{lstlisting}
+%At this point, you might be tempted to try to write a |Show| instance for functions.
+%Unfortunately, you can't quite do that with this technique.
 
 \subsection{Evaluating the syntax tree}
-Another useful task for ASTs is to evaluate them,
-generating the value they represent.
+Our last task is to evaluate the ASTs.
+That is, we need to run them to generate the value the tree represents.
+
 To do this, we will take advantage of the free monad's structure.
 The free monad is so called because as long as the parameter |f| is a |Functor|,
 then |Free| has a valid |Monad| instance.
@@ -556,7 +687,7 @@ instance Functor f => Functor (Free f) where
 \end{lstlisting}
 For our purposes, that's all the structure we'll need.
 
-First, we construct a function that ``runs'' the syntax tree, converting it into a single value.
+The following function evaluates the syntax tree.
 \begin{lstlisting}
 runAST :: (FAlgebra alg, alg a) => AST alg a -> a
 runAST (Pure a) = a
@@ -566,66 +697,76 @@ If our syntax tree already consists of just a single value (i.e. it is the |ePur
 then we just return that value.
 Otherwise, we use the |Functor| instance to recursively convert the |Sig|s into types of |a|, then a call to |runSig| combines the results.
 
-\subsection{Homoiconicity at last!}
-We are finally ready to see that our construction makes homogeneous functions homoiconic.
-If we open GHCi and enter the following expression
+When we evaluate an AST for an expression,
+we get the same result as if we had just evaluated the expression directly.
 \begin{lstlisting}
-ghci> let ast=associator (Pure a1) (Pure a2) (Pure a3)
-\end{lstlisting}
-the display shows our AST
-\begin{lstlisting}
-\end{lstlisting}
-We can also evaluate our AST and see that doing so gives the same results as running the original expression.
-\begin{lstlisting}
-ghci> runAST ast
+ghci> logLogistic1 10 :: Double
+-4.539889921682063e-5
 
-ghci> associator a1 a2 a3
-
+ghci> runAST (logLogistic1 10 :: AST Floating Double)
+-4.539889921682063e-5
 \end{lstlisting}
-We are now ready to use our ASTs to make working with numeric functions easier.
-%\subsection{The Prelude's Numeric Hierarchy}
+And this demonstrates that homogeneous functions are in fact homoiconic.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Implementing the stabilize function}
 \label{sec:stabilize}
 
-We've seen how to easily construct the ASTs,
-now it's time to perform computations on them.
-The standard way to deconstruct an AST is via pattern matching.
-We'll use the |ViewPatterns| and |PatternSynonyms| language extensions to simplify this task.
-Then we'll see three examples of improving floating point accuracy.
+We're now ready to modify our programs by manipulating the ASTs.
+The standard way to deconstruct an AST Haskell is via pattern matching.
+In this section, we'll first demonstrate how to pattern match our ASTs using the |ViewPatterns| and |PatternSynonyms| language extensions.
+Then we'll see three simple examples of program transformations implemented in this way.
+
+Automatically stabilizing floating point expressions is an active area of research.
+One way of doing this is to create a library of program transformations that fix many different types of expressions.
+Then combining everything in the library on your problem.
+In this section, we'll create a very small library for these floating point issues,
+and don't claim to have completely solved the floating point problem.
+This is simply a motivating example for homoiconicity.
 
 \subsection{Pattern matching the AST}
 
-We'll begin with a very simple example.
-Consider the following simple, but numerically unstable function.
+Consider the following simple,
+but numerically unstable function.
 \begin{lstlisting}
 testFunc1 :: Floating a => a -> a
-testFunc1 = log(exp a)
+testFunc1 = log (exp a)
 \end{lstlisting}
 As in our |logLogistic1| function, |testFunc| is unstable when specialized to |Double|s
 because input values greater than (approximately) 710 cause the |exp| function to overflow to infinity;
 the log of infinity is still infinity;
 so the returned answer is infinity.
 But clearly this is not the correct answer.
-Mathematically, the $\log$ is the inverse of $\exp$, so the final result should be 711.
+Mathematically, the $\log$ is the inverse of $\exp$, so the final result should be 710.
+We'll write a program transformation that fixes this function,
+then we'll demonstrate how the |ViewPatterns| and |PatternSynonyms| language extensions simplify this transformation.
 
-First, we'll see how to properly manipulate the AST to fix this problem.
-%We need a function of type |AST Floating a -> AST Floating a|.
-We're trying to convert the expression |log (exp x)| into simply |x|.
+Our goal is to convert the expression |log (exp x)| into just |x|.
 To do this, we can just pattern match on the AST for the left hand side of the expression,
 and replace it with the right hand side.
 \begin{lstlisting}
-logexpAST1 ::
-    AST Floating a -> AST Floating a
-logexpAST1
-    (Free (Sig_log (Free (Sig_exp a)))) = a
-logexpAST1 a = a
+logexpAST1 :: AST Floating a -> AST Floating a
+logexpAST1 (Free (Sig_log (Free (Sig_exp a)))) = a
 \end{lstlisting}
-This function has two problems.
-First, our pattern matching expression is large and obnoxious.
-Second, it's not generic.
+This function works, but has some warts.
+First, our pattern contains noise from the need to alternate between the |Free| and |Sig_| constructors.
+Second, it is specialized to the |Floating| type class,
+so it won't work on any subclasses of |Floating| when it should be able to.
 
-We can fix the second problem using the |ViewPatterns| language extension.
+We'll start by fixing the second problem using the |ViewPatterns| language extension.
+We will provide a very brief description of this GHC extension here;
+for a more comprehensive description, see the GHC wiki \cite{viewpatterns}.
+|ViewPatterns| lets us use functions within a pattern,
+and we pattern match on the return value of the function.
+Because functions can be polymorphic,
+we can use the |ViewPatterns| extension to make our pattern accept multiple constructors.
+Fortunately, we've already defined a function that extracts a |Sig| from its subclasses.
+\begin{lstlisting}
+unsafeExtractSig :: View alg1 alg2
+    => Sig alg2 a -> Sig alg1 a
+\end{lstlisting}
+By using this function in the pattern, we can write a polymorphic version of our program transformation.
 \begin{lstlisting}
 logexpAST2 :: View Floating alg
     => AST alg a -> AST alg a
@@ -633,124 +774,164 @@ logexpAST2
     (Free (unsafeExtractSig -> Sig_log
     (Free (unsafeExtractSig -> Sig_exp a))))
     = a
-logexpAST2 a = a
 \end{lstlisting}
-But this made our pattern matches even uglier!
-Fortunately, we can use the |PatternSynonyms| extension to greatly simplify these patterns.
-\footnote{
-    %These patterns can be made bidirectional using the |embedSig| function.
-    For ease of presentation, only the unidirectional case is shown.
-}
+This function now has the correct type signature (so we've solved problem 2),
+but the pattern matches are even uglier (so problem 1 is worse).
+Fortunately, we can use the |PatternSynonyms| extension to simplify the patterns.
+Again, see the GHC wiki for a complete description of this language extension \cite{patternsynonyms}.
+
+We define a pattern synonym for each function contained in an FAlgebra.
+Our naming convention is to prefix |AST_| to the name of the function.
+These pattern synonyms combine the |Free| constructor with the view pattern from the previous example.
+The synonyms for the |log| and |exp| functions are shown below.
 \begin{lstlisting}
-pattern AST_log ::
-    ( View Floating alg
-    ) => AST alg a -> AST alg a
+pattern AST_log :: View Floating alg
+    => AST alg a -> AST alg a
 pattern AST_log e
     <- Free (unsafeExtractSig -> Sig_log e)
 
-pattern AST_exp ::
-    ( View Floating alg
-    ) => AST alg a -> AST alg a
+pattern AST_exp :: View Floating alg
+    => AST alg a -> AST alg a
 pattern AST_exp e
     <- Free (unsafeExtractSig -> Sig_exp e)
 \end{lstlisting}
-Armed with these pattern synonyms, we can rewrite our function in the much simpler form below.
+Armed with these pattern synonyms,
+we can rewrite our function in the much simpler form below.
 \begin{lstlisting}
 logexpAST3 :: View Floating alg
     => AST alg a -> AST alg a
 logexpAST3 (AST_log (AST_exp a)) = a
-logexpAST3 a = a
 \end{lstlisting}
-Now that we can manipulate the AST, let's apply it to our function.
+This simple function works in the simple motivating test case:
 \begin{lstlisting}
-transform1 :: forall alg x.
-    ( FAlgebra alg
-    , alg x
-    ) => (AST alg x -> AST alg x)
-      -> (AST alg x -> AST alg x)
-      -> (x -> x)
-transform1 go f x = runAST $ go $ f (Pure x)
+ghci> logexpAST3 $ testFunc1 var1 :: AST Floating Var
+var1
 \end{lstlisting}
-
-
-But is our function really correct?
+%stopzone
+but it fails to work in this slightly more complex function:
 \begin{lstlisting}
 testFunc2 :: Floating a => a -> a
-testFunc2 = 1+log(exp a)
+testFunc2 a = 1+exp(log a)
 \end{lstlisting}
-What if we call
-
+We haven't told our program transformations what to do when they don't pattern match!
+The correct answer is that we want them to recurse into the subexpressions,
+applying their program transformations there as well.
+In the free monad, we handle these recursions using our |Functor| instance and calls to |fmap|.
 \begin{lstlisting}
 logexpAST4 :: View Floating alg => AST alg a -> AST alg a
 logexpAST4 (AST_log (AST_exp a)) = a
 logexpAST4 (Free f) = Free (fmap logexpAST4 f)
 logexpAST4 (Pure a) = Pure a
 \end{lstlisting}
-
+Now we correctly recurse into subexpressions.
 \begin{lstlisting}
-testFunc :: Floating a => a -> a
-testFunc a = log(exp a)
-
-ghci> logexpAST4 (testFunc 2) :: AST Floating Double
-((fromInteger 1)+(fromInteger 2))
-
-testFunc2 :: Floating a => a -> a
-testFunc2 a = 1+exp(exp(exp(log(log(log a)))))
-
-ghci> fixAST stabilizeAST
-    (testFunc2 var1 :: AST Floating Var)
+ghci> logexpAST4 $ testFunc2 var1 :: AST Floating Var
 ((fromInteger 1)+var1)
 \end{lstlisting}
-
+%stopzone
+There's still one last wrinkle.
+What if we need to apply the program transformation multiple times?
 \begin{lstlisting}
-fixAST :: (Eq (Sig alg (Free (Sig alg) a)), Eq a) => (AST alg a -> AST alg a) -> AST alg a -> AST alg a
+ghci> logexpAST4 $ testFunc3 var1
+    :: AST Floating Var
+((fromInteger 1)+(log (log (exp (exp var1)))))
+\end{lstlisting}
+%stopzone
+We want to apply the program transformation repeatedly until it stops changing the AST.
+This is called the fixed point of the transformation.
+The |fixAST| function below does this.
+\begin{lstlisting}
+fixAST ::
+    ( Eq (Sig alg (Free (Sig alg) a))
+    , Eq a
+    ) => (AST alg a -> AST alg a)
+      -> (AST alg a -> AST alg a)
 fixAST f ast = if ast==ast'
     then ast
     else fixAST f ast'
     where
         ast' = f ast
 \end{lstlisting}
+Now we can correctly modify the |testFunc3| function.
+\begin{lstlisting}
+ghci> fixAST logexpAST4 $ testFunc3 var1
+    :: AST Floating Var
+((fromInteger 1)+var1)
+\end{lstlisting}
+%stopzone
 
 \subsection{More complex rules}
 
 The rules in in the previous section are relatively simple.
-They could just as easily have been written using GHC's rewrite rules syntax.
+They could just as easily have been written using GHC's rewrite rules syntax \cite{jones2001playing}.
 Rewrite rules are the primary mechanism for optimising source code in GHC.
 One optimization that rewrite rules cannot support is constant folding,
 and there is code in GHC specially to perform this constant folding.
 
+Our program transformations, however, are powerful enough to fold constants.
+The following function performs constant folding on expressions containing addition and multiplication of integers.
 \begin{lstlisting}
-foldConstants :: View Num alg => AST alg a -> AST alg a
-foldConstants (AST_plus   (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1+a2)
-foldConstants (AST_minus  (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1-a2)
-foldConstants (AST_mul    (AST_fromInteger a1) (AST_fromInteger a2)) = AST_fromInteger (a1*a2)
-foldConstants (AST_negate (AST_fromInteger a1)) = AST_fromInteger (negate a1)
-foldConstants (Free sig) = Free (fmap foldConstants sig)
-foldConstants (Pure a  ) = Pure a
+foldConstants :: View Num alg
+    => AST alg a -> AST alg a
+foldConstants (AST_plus
+    (AST_fromInteger a1)
+    (AST_fromInteger a2))
+    = AST_fromInteger (a1+a2)
+foldConstants (AST_mul
+    (AST_fromInteger a1)
+    (AST_fromInteger a2))
+    = AST_fromInteger (a1*a2)
+foldConstants (Free sig)
+    = Free (fmap foldConstants sig)
+foldConstants (Pure a) = Pure a
 \end{lstlisting}
+It is straightforward to extend this function to work for other operations,
+but for space reasons these were omitted.
 
+Here's an example of our constant folding in action.
+First define a simple function.
 \begin{lstlisting}
-constExpr :: Num a => a
-constExpr = 4+2*(8-2)-1
-
--- ghci> fixAST foldConstants constExpr
--- (fromInteger 18)
-
 constFunc :: Num a => a -> a -> a
 constFunc x1 x2 = x1*2-(7-2)*x2
-
--- ghci> fixAST foldConstants (constFunc 2 3)
--- (fromInteger -11)
--- ghci> fixAST foldConstants (constFunc var1 var2)
--- ((var1*(fromInteger 2))-((fromInteger 5)*var2))
+\end{lstlisting}
+Then, if we call this function with two known parameters,
+our |foldConstants| function is able to take it down to a single constant.
+\begin{lstlisting}
+ghci> fixAST foldConstants (constFunc 2 3)
+    :: AST Floating Double
+(fromInteger 31)
+\end{lstlisting}
+If we instead invoke the function with only
+\begin{lstlisting}
+ghci> fixAST foldConstants (constFunc var1 var2)
+    :: AST Floating Var
+((var1*(fromInteger 2))+((fromInteger 9)*var2))
+\end{lstlisting}
+We can even invoke the function with only a single known parameter,
+and have that constant get folded into the final expression.
+\begin{lstlisting}
+ghci> fixAST foldConstants (constFunc var1 3)
+    :: AST Floating Var
+((var1*(fromInteger 2))+(fromInteger 27))
 \end{lstlisting}
 
 \subsection{The log-logistic function}
 
+Our original motivation was to stabilize the |logLogistic1| function.
+Stabilizing this function is a bit harder because it actually requires changing the type signature of the function by adding an |Ord| instance.
+One of the requirements of a homogeneous function is that it have only a single class in the context.
+To accommodate this condition, we'll create a new type class that has our desired types in the constraint.
 \begin{lstlisting}
-stabAST :: Eq a =>
+class (Floating a, Ord a) => FloatingOrd a
+instance {-#OVERLAPPABLE#-} (Floating a, Ord a) => FloatingOrd a
+\end{lstlisting}
+Note that the |OVERLAPPABLE| pragma is required so that we can create an |Ord| instance for |AST FloatingOrd a|.
+
+Now we can define our transformation as
+\begin{lstlisting}
+stabilize :: Eq a =>
     AST FloatingOrd a -> AST FloatingOrd a
-stabAST
+stabilize
     (AST_log
         (AST_div
             (AST_fromInteger 1)
@@ -762,27 +943,28 @@ stabAST
             )
         )
     )
-    = logLogistic2 x
+    = m+log(1/(exp(m)+exp(-x+m)))
+        where
+            m = min 0 x
 \end{lstlisting}
 
 \section{Heterogeneous functions are homoiconic}
 
-%\begin{lstlisting}
-%data Vec3 a = Vec3 a a a
-    %deriving (Eq,Show)
-%\end{lstlisting}
-
-One of the main limitations of GHC's numeric hierarchy is that it was designed for scalar numbers.
-A logistic regression implementation needs vectors.
-There's been many proposals to extend GHC's built-in hierarchy to handle vectors.
-A very simple such extension is shown in Figure \ref{code:vector}.
-This extension uses type families.
+The next step in implementing logistic regression is implementing the logistic loss function
+\begin{align}
+l &: \mathbb{R}^n \times \mathbb{R}^n \to \mathbb{R} \\
+l &(v_1,v_2) = f(<v_1,v_2>)
+\end{align}
+This function takes two vectors as inputs and returns a scalar.
+Unfortunately, GHC's numeric hierarchy has no notion of vectors.
+So you implement a simple extension to the hierarchy shown in Figure \ref{code:vector}.
 
 \begin{figure}
 \begin{lstlisting}
 type family Scalar a
 
-class (Num a, Fractional (Scalar a)) => Vector a where
+class (Num a, Fractional (Scalar a))
+    => Vector a where
     (.*) :: Scalar a -> a -> a
 
 class Vector a => Hilbert a where
@@ -794,76 +976,283 @@ class Vector a => Hilbert a where
 \label{code:vector}
 \end{figure}
 
+You can now implement the logistic loss as:
 \begin{lstlisting}
 logLoss :: Vector a => a -> a -> Scalar a
 logLoss a1 a2 = logLogistic1 (dotproduct a1 a2)
 \end{lstlisting}
+Unfortunately, this function is not homogeneous due to the application of a type family in the return type.
+So we cannot use the construction of Section \ref{sec:homogeneous} to generate an AST for this function.
+In this section, we'll introduce the more general notion of heterogeneous functions and show how to construct ASTs for them.
 
-The |logLoss|, |(.*)|, and |dotProduct| functions are not homogeneous because of the type families.
-Heterogeneous functions are a relaxation of homogeneous functions.
-We call a function \emph{heterogeneous} if:
+Informally, the key difference between a homogeneous and heterogeneous FAlgebra is that homogeneous FAlgebras contain functions only over a single type; whereas heterogeneous FAlgebras contain functions over many different types.
+Formally, we call a function \emph{heterogeneous} if:
 \begin{enumerate}
 \item
-The function is polymorphic in its return type.
+The function's signature contains a single type variable, which we'll call |a|.
 \item
-The function's parameters are either the same as the return type, they are concrete.
+The function returns either |a| or a type family applied to |a|.
+\item
+%The function's parameters are either the same as the return type, they are concrete.
+Each of the function's parameters is either:
+\begin{enumerate}
+\item
+|a|,
+\item
+a type family applied to |a|, or
+\item
+concrete.
+\end{enumerate}
 \item
 The constraints contain exactly one type class, and
 that type class has exactly one parameter,
 which is the function's return type.
 \end{enumerate}
+The construction of ASTs follows for heterogeneous types follows a similar pattern as for homogeneous types, but involves considerably more type hackery.
 
 \subsection{Dealing with type families}
+Before we're ready to construct the ASTs, we need a short diversion to discuss type families.
+Type families are functions at the type level in Haskell.
+Unfortunately, they're not as convenient to work with.
+In particular, type families cannot be partially applied.
 
+To simulate partial application, we will create a new data type for each type family.
+The naming convention is to put a |T| in front of the family's name.
+For example, we declare
 \begin{lstlisting}
-type AT = Type
+data TScalar
+\end{lstlisting}
+for the type family |Scalar|.
+\begin{lstlisting}
+type family App (t::k) (a::Type) :: Type
 \end{lstlisting}
 
+Repeated applications of type families will be stored in a promoted list.
 \begin{lstlisting}
-type family App (t::k) (a::Type) ::  Type
 type instance App '[]       a = a
 type instance App (x ': xs) a = App x (App xs a)
 \end{lstlisting}
 
-\subsection{Heterogeneous FAlgebras}
-
+Since |TScalar| is an ordinary Haskell type, it has kind |Type|.
+Ideally, we would like all of these shadow types to inhabit the same kind.
+But this would require open kind families,
+an extension that has been proposed\footnote{} but not implemented.
+To make our code easier to read, we will create the following kind synonym.
 \begin{lstlisting}
-class FunctorTag (f::[AT]->Type->Type) where
-    fmapTag :: HaskTag a b -> f t a -> f t b
+type AT = Type
 \end{lstlisting}
 
+\subsection{The problems}
+
+There are three problems with our homogeneous FAlgebra encoding that make it unsuitable for heterogeneous FAlgebras.
+
+\begin{problem}[the superclass problem]
+The |Vector| class has a superclass constraint on a type family.
+If we follow the formulation for making a homogeneous FAlgebra, we get
 \begin{lstlisting}
-class HetFunctor (Sig alg) => FAlgebra (alg::Type->Constraint) where
+instance FAlgebra Vector where
+    data Sig Vector a
+        = Sig_dotmul (Scalar a) a
+        | Sig_Vector_Num (Sig Num a)
+        | Sig_Vector_Floating (Sig Floating (Scalar a))
+    runSig (Sig_dotmul s a) = s.* a
+    runSig (Sig_Vector_Num s) = runSig s
+    runSig (Sig_Vector_Floating s) = runSig s
+\end{lstlisting}
+This definition does not type check.
+In the last line of |runSig|'s definition,
+the type checker will try to match the |a| type with |Scalar a| and fail.
+\end{problem}
+
+\begin{problem}[the parameter problem]
+Now consider what happens when you try to write the |Functor| instance
+\begin{lstlisting}
+instance Functor (Sig Vector) where
+    fmap f (Sig_dotmul s a) = Sig_dotmul (f s) (f a)
+    fmap f (Sig_Vector_Num s) = Sig_Vector_Num (f s)
+    fmap f (Sig_Vector_Floating s) = Sig_Vector_Floating (f s)
+\end{lstlisting}
+Here type checking fails on the last line for the same reason as above,
+but also fails on the first line due to the presence of a type family application in the function's parameter.
+\end{problem}
+
+\begin{problem}[the return type problem]
+Consider for a moment the |Hilbert| class in Figure \ref{code:vector}.
+The |dotProduct| function is not homogeneous because of the type family in the return type.
+What happens if we try to make |Hilbert| and instance of |FAlgebra| anyways?
+We would get something like:
+\begin{lstlisting}
+instance FAlgebra Hilbert where
+    data Sig Hilbert a
+        = Sig_Hilbert_Module (Sig Module a)
+        | Sig_dotProduct a a
+    runSig (Sig_Hilbert_Module s) = runSig s
+    runSig (Sig_dotProduct a1 a2) = dotProduct a1 a2
+\end{lstlisting}
+This code doesn't type check.
+|runSig| expects its return type to be |a|,
+but |dotProduct| returns a |Scalar a|.
+\end{problem}
+
+\subsection{Heterogeneous FAlgebras}
+
+Our new |FAlgebra| class has a number of modifications to solve the problems mentioned above.
+It is defined as:
+\begin{lstlisting}
+class HetFunctor (Sig alg) => FAlgebra alg where
     data Sig alg (t::[AT]) a
 
-    runSigTag :: alg a => proxy a -> Sig alg (s ':  t) (App t a) -> App (s ':  t) a
-    runSig    :: alg a => proxy a -> Sig alg        t  (App t a) -> App        t  a
+    runSig    :: alg a => proxy a
+        -> Sig alg        t  (App t a) -> App        t  a
+    runSigTag :: alg a => proxy a
+        -> Sig alg (s ':  t) (App t a) -> App (s ':  t) a
+\end{lstlisting}
+
+The most important change is that the |Sig| data family has been given a new type parameter |t|.
+This parameter indexes the return type of the operation stored in |Sig|.
+Notice that |t| has kind |[AT]|.
+If there is no type family application, then |t| will be the empty list |'[]|;
+if there is a single application by data constructor |A|, |t| will be |'[A]|;
+and if the return type is |A (B a)|, then |t| will be |'[A,B]|.
+
+When defining instances of the |Sig| family, we will need to use GADTs to enforce that the |t| parameter is set correctly.
+|Sig|'s constructors can be classified into the same categories as before.
+For superclass constructors, if the class constraint does not involve a type family,
+then we get defined as:
+\begin{lstlisting}
+Sig_Vector_Num :: Sig Num t a -> Sig Vector t a
+\end{lstlisting}
+if the class constraint does involve a type family,
+then we prepend the type family to |t| in the constructor's return type.
+\begin{lstlisting}
+Sig_Vector_Floating_Scalar
+    :: Sig Floating t a -> Sig Vector (TScalar ': t) a
+\end{lstlisting}
+Function constructors are likewise divided into two cases.
+If the function's return type does not use a type family,
+then
+\begin{lstlisting}
+Sig_dotmul :: Scalar a -> a -> Sig Vector '[] a
+\end{lstlisting}
+If the function's return type does use a type family,
+then
+\begin{lstlisting}
+Sig_dotProduct :: a -> a -> Sig Hilbert '[TScalar] a
+\end{lstlisting}
+These changes to the |Sig| type are the core of the new addition.
+There will be many changes to all of the other functions,
+but they all stem from adapting the same techniques used in the homogeneous case to the updated |Sig|.
+
+The |runSig| function has been split into two functions, |runSig| and |runSigTag|.
+First we'll explain the |runSig| function, then see why its deficiencies necessitate the |runSigTag| function.
+Recall that the |t| type variable represents the type families that have been applied to the content of the |Sig|.
+So when we run the |Sig|, the content needs to reflect those applications.
+Thus, the parameter to |runSig| is |Sig alg t (App t a)|.
+Similarly, the return type needs to reflect those applications plus whatever applications are present in the function.
+And so the return type is |Sig alg t (App t a)|.
+Because the |a| type variable appears only inside type family applications,
+we need the |proxy a| argument for type resolution.
+The |runSig| function is defined exactly as before.
+\begin{lstlisting}
+runSig _ (Sig_Vector_Num s)
+    = runSig (Proxy::Proxy a) s
+runSig _ (Sig_Vector_Floating s)
+    = runSig (Proxy::Proxy (Scalar a)) s
+runSig _ (Sig_dotmul s a) = s.*a
+\end{lstlisting}
+If the function's return type involves a type family application,
+then it is impossible to use the |runSig| function on it.
+The signature is wrong.
+That is why we introduce a second function |runSigTag|.
+\begin{lstlisting}
+runSigTag p (Sig_Hilbert_Vector s) = runSigTag p s
+runSigTag p (Sig_dotproduct a1 a2) = dotproduct a1 a2
 \end{lstlisting}
 
 \subsection{Constructing the AST}
 
+To construct an AST out of the |Sig| functor requires a more complex version of the free monad.
 \begin{lstlisting}
-type AST alg t a = Free (Sig alg) t a
-
 data Free (f::[AT]->Type->Type) (t::[AT]) (a::Type) where
     FreeTag  :: f (s ': t) (Free f t a)  -> Free f (s ': t) a
     Free     :: f       t  (Free f t a)  -> Free f       t  a
     Pure     :: App t a -> Free f t a
 \end{lstlisting}
+There are now three constructors.
+The |Free| and |Pure| constructors work exactly as they did before.
+The only difference is that |Pure| does not store the |a| type inside of it,
+but instead it applies the |t| type families to |a|.
+The |FreeTag| constructor represents a branch like the |Free| constructor,
+but it also represents a change in return type.
+When embedding a |Sig| into an AST,
+we will use the |FreeTag| constructor whenever the function's return type uses a type family.
 
+The AST is then defined as
 \begin{lstlisting}
-class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
-    embedSig          :: Sig alg1       t1  a -> Sig alg2       t2  a
-    unsafeExtractSig  :: Sig alg2       t2  a -> Sig alg1       t1  a
+type AST alg t a = Free (Sig alg) t a
 \end{lstlisting}
 
+We can make the AST type instances of the type classes similarly to how we did for homogeneous FAlgebras.
+The main difference is that we will need a new |View| class for converting between |Sig|s.
+This |View| class not only converts the |alg| parameter, but also the |t| parameter.
 \begin{lstlisting}
-embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
-embedSigTag = embedSig
+class (FAlgebra alg1, FAlgebra alg2)
+    => View alg1 t1 alg2 t2 where
+    embedSig
+        :: Sig alg1 t1 a -> Sig alg2 t2 a
+    unsafeExtractSig
+        :: Sig alg2 t2 a -> Sig alg1 t1 a
 \end{lstlisting}
+
+%\begin{lstlisting}
+%embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
+%embedSigTag = embedSig
+%\end{lstlisting}
 
 \subsection{Showing the AST}
 
+To convert the heterogeneous AST into a |String|,
+we need to write a |Show| instance for |Free| and a show instance for each |Sig|.
+Both of these instances are considerably more complicated than before.
+
+The |Show| instance for the |Sig| type follows the same pattern as before.
+For each function constructor,
+simply show the constructor's arguments connected in an appropriate way by the function's name.
+For each superclass constructor, show the contained constructor.
+\begin{lstlisting}
+instance
+    ( Show a
+    , Show (Scalar a)
+    ) => Show (Sig Vector t a)
+        where
+    show (Sig_Vector_Num s) = show s
+    show (Sig_Vector_Floating s) = show s
+    show (Sig_dotmul a1 a2) = show a1++".*"++show a2
+\end{lstlisting}
+We had to add the |Show (Scalar a)| constraint above because the |a1| variable in the last line has type |Scalar a|.
+
+This instance can be defined, but it can't yet be used.
+Recall that we defined
+\begin{lstlisting}
+type Scalar (AST alg t a) = AST alg (TScalar ': t) a
+\end{lstlisting}
+This means that the constraint |Show (Scalar a)| will use the same |Show| instance as the one displayed above.
+In order to satisfy that constraint, we need |Show (Show (Scalar a))|.
+This nesting of |Show| constraints continues forever!
+In order to stop this explosion of |Show| constraints, we add the following overlapping instance.
+\begin{lstlisting}
+instance {-#OVERLAPS#-} Show
+    (Sig Module (t1 ': t2 ': t3 ': ts) a) where
+    show _ = "<<overflow>>"
+\end{lstlisting}
+Once there are at least three |Scalar|s applies,
+this instance becomes more specific,
+and is thus selected by GHC.
+Since this instance has no constraints,
+that ends the recursion.
+
+We must perform a related type hack to get the |Show| instance for |Free|.
+The |Show| instance for |Free| is shown below.
 \begin{lstlisting}
 instance
     ( Show      (App t a)
@@ -879,9 +1268,11 @@ type family ShowUntag (f::Type) :: Constraint where
     ShowUntag (f (s ':  t) (Free f (s ':  t) a))  = Show (f (s ':  t) (Free f          t  a))
     ShowUntag a = ()
 \end{lstlisting}
+The |FreeTag| constructor must be undressed in order to satisfy the |Show| requirement.
 
 \subsection{Evaluating the AST}
 
+Running the heterogeneous AST is almost the same as the homogeneous case.
 \begin{lstlisting}
 eval :: forall alg t a.
     ( FAlgebra alg
@@ -891,6 +1282,8 @@ eval (Pure    a) = a
 eval (Free    s) = runSig    (Proxy::Proxy a) $ mape eval s
 eval (FreeTag s) = runSigTag (Proxy::Proxy a) $ mape eval s
 \end{lstlisting}
+The only difference is we need to add a line for the |FreeTag| parameter,
+and we need to manually specify the type |a| with the |Proxy|.
 
 \subsection{Heterogeneous homoiconicity at last!}
 

@@ -133,6 +133,8 @@ apHaskTag pt (HaskTag f) = f pt (Proxy::Proxy a) (Proxy::Proxy b)
 class FunctorTag (f::[AT]->Type->Type) where
     fmapTag :: HaskTag a b -> f t a -> f t b
 
+    fmapTag' :: Proxy s -> Proxy a -> Proxy b -> App s a -> App s b
+
 ----------------------------------------
 
 type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
@@ -272,6 +274,11 @@ class Typeable alg => FAlgebra (alg::Type->Constraint) where
          -> Sig alg t (Free (Sig alg') t' a)
          -> Sig alg t (App t' a)
 
+--     mapf :: (TypeConstraints t' a)
+--          => (forall s. Free (Sig alg') s a -> Free (Sig alg') s a)
+--          -> Sig alg t (Free (Sig alg') t' a)
+--          -> Sig alg t (Free (Sig alg') t' a)
+
 ----------------------------------------
 
 class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
@@ -288,6 +295,11 @@ unsafeExtractSigTag ::
     ( View alg1 '[s] alg2 (s:t)
     ) => Sig alg2 (s ': t) (Free (Sig alg2) t a) -> Sig alg1 '[s] (Free (Sig alg2) t a)
 unsafeExtractSigTag = unsafeExtractSig
+
+unsafeExtractSigTag0 ::
+    ( View alg1 '[] alg2 t
+    ) => Sig alg2 t (Free (Sig alg2) t a) -> Sig alg1 '[] (Free (Sig alg2) t a)
+unsafeExtractSigTag0 = unsafeExtractSig
 
 instance FAlgebra alg => View alg t alg t where
     embedSig = id
@@ -533,9 +545,9 @@ mkFAlgebra algName = do
 
     -- remove functions from decsraw that we can't handle
     let go x = case x of
-            SigD _ sigType -> if not $ isVarT $ getReturnType sigType
+            SigD _ sigType -> if isConcrete $ getReturnType sigType
                 then False
-                else True -- and $ map isVarT $ getArgs sigType
+                else True
     let decs = filter go rawdecs
 
     -- common variables we'll need later
@@ -760,15 +772,16 @@ mkFAlgebra algName = do
                             (VarT _) -> AppE
                                 ( AppE
                                     ( VarE $ mkName "runSigTag" )
-                                    ( case predType of
-                                        (VarT _) -> VarE $ mkName "p"
-                                        _        -> SigE
-                                            ( ConE $ mkName "Proxy" )
-                                            ( AppT
-                                                ( ConT $ mkName "Proxy" )
-                                                ( subAllVars varName predType )
-                                            )
-                                    )
+                                    ( VarE $ mkName "p" )
+--                                     ( case predType of
+--                                         (VarT _)  -> VarE $ mkName "p"
+--                                         otherwise -> SigE
+--                                             ( ConE $ mkName "Proxy" )
+--                                             ( AppT
+--                                                 ( ConT $ mkName "Proxy" )
+--                                                 ( subAllVars varName predType )
+--                                             )
+--                                     )
                                 )
                                 ( VarE $ mkName "s" )
                             _ -> AppE
@@ -885,38 +898,104 @@ mkFAlgebra algName = do
             ]
 
     -- construct pattern synonyms
+    --
+    -- FIXME:
+    -- The pattern synonyns for the tagged and untagged versions are currently split into two separate cases.
+    -- There's a lot of overlap in them though, and so the code would probably be nicer to merge the two cases.
     let patSyns = concat $
             [ if isVarT $ getReturnType sigType
-                then [ PatSynD
-                    ( mkName $ "AST_" ++ renameClassMethod sigName )
-                    ( PrefixPatSyn $ genericArgs sigType )
-                    ( ExplBidir
-                        [ Clause
-                            ( map VarP $ genericArgs sigType )
-                            ( NormalB $ AppE
-                                ( ConE $ mkName "Free" )
-                                ( AppE
-                                    ( VarE $ mkName "embedSig" )
-                                    ( foldl
-                                        AppE
-                                        ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
-                                        ( map VarE $ genericArgs sigType )
+                then
+                    [ PatSynSigD
+                        ( mkName $ "AST_" ++ renameClassMethod sigName )
+                        ( ForallT
+                            [ PlainTV $ mkName "alg"
+                            , PlainTV tagName
+                            , PlainTV varName
+                            ]
+                            [ AppT
+                                ( AppT
+                                    ( AppT
+                                        ( AppT
+                                            ( ConT $ mkName "View" )
+                                            ( ConT $ algName )
+                                        )
+                                        PromotedNilT
+                                    )
+                                    ( VarT $ mkName "alg" )
+                                )
+                                ( VarT tagName )
+                            ]
+                            ( foldr
+                                (\a b -> AppT
+                                    ( AppT
+                                        ArrowT
+                                        ( if isConcrete a
+                                            then a
+                                            else AppT
+                                                ( AppT
+                                                    ( AppT
+                                                        ( ConT $ mkName "Free" )
+                                                        ( AppT
+                                                            ( ConT $ mkName "Sig" )
+                                                            ( VarT $ mkName "alg" )
+                                                        )
+                                                    )
+                                                    ( if isVarT a
+                                                        then VarT tagName
+                                                        else predType2tagType (VarT tagName) a
+                                                    )
+                                                )
+                                                ( VarT varName )
+                                        )
+                                    )
+                                    b
+                                )
+                                ( AppT
+                                    ( AppT
+                                        ( AppT
+                                            ( ConT $ mkName "Free" )
+                                            ( AppT
+                                                ( ConT $ mkName "Sig" )
+                                                ( VarT $ mkName "alg" )
+                                            )
+                                        )
+                                        ( VarT tagName )
+                                    )
+                                    ( VarT varName )
+                                )
+                                ( getArgs sigType )
+                            )
+                        )
+                    , PatSynD
+                        ( mkName $ "AST_" ++ renameClassMethod sigName )
+                        ( PrefixPatSyn $ genericArgs sigType )
+                        ( ExplBidir
+                            [ Clause
+                                ( map VarP $ genericArgs sigType )
+                                ( NormalB $ AppE
+                                    ( ConE $ mkName "Free" )
+                                    ( AppE
+                                        ( VarE $ mkName "embedSig" )
+                                        ( foldl
+                                            AppE
+                                            ( ConE $ mkName $ "Sig_" ++ renameClassMethod sigName )
+                                            ( map VarE $ genericArgs sigType )
+                                        )
                                     )
                                 )
-                            )
-                            []
-                        ]
-                    )
-                    ( ConP
-                        ( mkName "Free" )
-                        [ ViewP
-                            ( VarE $ mkName "unsafeExtractSig" )
-                            ( ConP
-                                ( mkName $ "Sig_" ++ renameClassMethod sigName )
-                                ( map VarP $ genericArgs sigType )
-                            )
-                        ]
-                    )
+                                []
+                            ]
+                        )
+                        ( ConP
+                            ( mkName "Free" )
+                            [ ViewP
+                                ( VarE $ mkName "unsafeExtractSigTag0" )
+                                ( ConP
+                                    ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                    ( map VarP $ genericArgs sigType )
+                                )
+                            ]
+                        )
                     ]
                 else
                     [ PatSynSigD
@@ -1451,7 +1530,7 @@ mkFAlgebra algName = do
                 <- allcxt
             ]
 
-    return $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
+    return $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,{-instShowOverlap,-}instFree]
 
 predType2str :: Pred -> String
 predType2str (ConT t) = nameBase t

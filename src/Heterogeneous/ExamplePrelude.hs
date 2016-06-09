@@ -1,3 +1,6 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms #-}
+
 module Heterogeneous.ExamplePrelude
     where
 
@@ -37,28 +40,55 @@ mkFAlgebra ''FloatingOrd
 --       -> Free (Sig alg) t a
 --       -> Free (Sig alg) t a
 
-pattern Expr_log :: forall t alg a.
-    ( View Floating '[] alg t
-    ) => Free (Sig alg) t a
-      -> Free (Sig alg) t a
-pattern Expr_log e <- Free ((unsafeExtractSig :: Sig alg      t   (Free (Sig alg) t a)
-                                              -> Sig Floating '[] (Free (Sig alg) t a)
-                            ) -> Sig_log e) where
--- pattern Expr_log e <- Free (unsafeExtractSig -> Sig_log e) --where
-    Expr_log e = Free $ embedSig $ Sig_log e
+-- pattern Expr_negate :: forall t alg a.
+--     ( View Num '[] alg t
+--     ) => Free (Sig alg) t a
+--       -> Free (Sig alg) t a
+-- pattern Expr_negate e <- Free (unsafeExtractSigTag0 -> Sig_negate e) where
+--     Expr_negate e = Free $ embedSig $ Sig_negate e
+
+-- pattern Expr_log :: forall t alg a.
+--     ( View Floating '[] alg t
+--     ) => Free (Sig alg) t a
+--       -> Free (Sig alg) t a
+-- pattern Expr_log e <- Free ((unsafeExtractSig :: Sig alg      t   (Free (Sig alg) t a)
+--                                               -> Sig Floating '[] (Free (Sig alg) t a)
+--                             ) -> Sig_log e) where
+-- -- pattern Expr_log e <- Free (unsafeExtractSig -> Sig_log e) --where
+--     Expr_log e = Free $ embedSig $ Sig_log e
 
 --------------------------------------------------------------------------------
 
 type family Scalar a
 mkAT ''Scalar
 
+type instance Scalar Var = Var
+
+scalar1 :: AST alg '[TScalar] Var
+scalar1 = Pure $ Var "scalar1"
+
 type instance Scalar Float = Float
 type instance Scalar (Free (Sig alg) t a) = Free (Sig alg) (TScalar ': t) a
 
 ----------------------------------------
 
-class (Num a, Fractional (Scalar a)) => Vector a where
+class (Num a, Floating (Scalar a)) => Vector a where
     (.*) :: Scalar a -> a -> a
+
+-- instance FAlgebra Vector where
+--     data Sig Vector t a where
+--         Sig_Vector_Num :: Sig Num t a -> Sig Vector t a
+--         Sig_Vector_Floating_Scalar :: Sig Floating t a -> Sig Vector (TScalar ': t) a
+--         Sig_dotmul :: Scalar a -> a -> Sig Vector '[] a
+--
+-- instance
+--     ( Show a
+--     , Show (Scalar a)
+--     ) => Show (Sig Vector t a)
+--         where
+--     show (Sig_Vector_Num s) = show s
+--     show (Sig_Vector_Floating_Scalar s) = show s
+--     show (Sig_dotmul s a) = show s++".*"++show a
 
 mkFAlgebra ''Vector
 
@@ -95,7 +125,7 @@ instance Num a => Num (Vec3 a) where
     abs (Vec3 a1 a2 a3) = Vec3 (abs a1) (abs a2) (abs a3)
     fromInteger i = Vec3 (fromInteger i) (fromInteger i) (fromInteger i)
 
-instance Fractional a => Vector (Vec3 a) where
+instance Floating a => Vector (Vec3 a) where
     (.*) s (Vec3 a1 a2 a3) = Vec3 (s*a1) (s*a2) (s*a3)
 
 --------------------------------------------------------------------------------
@@ -111,27 +141,46 @@ logexpAST1 (Free (Sig_log (Free (Sig_exp a)))) = a
 -- logexpAST2 (Free (unsafeExtractSig -> Sig_log
 --            (Free (unsafeExtractSig -> Sig_exp a)))) = a
 
-logexpAST4 :: View Floating '[] alg '[] => AST alg '[] a -> AST alg '[] a
--- logexpAST4 :: AST alg '[] a -> AST alg '[] a
-logexpAST4 (Expr_log a) = a
--- logexpAST4 (AST_log (AST_exp a)) = a
+logexpAST4 :: View Floating '[] alg t => AST alg t a -> AST alg t a
+logexpAST4 (AST_log (AST_exp a)) = a
 -- logexpAST4 (Free f) = Free $ fmap logexpAST4 f
 -- logexpAST4 (Pure a) = Pure a
 
--- stabAST :: Eq a => AST FloatingOrd '[] a -> AST FloatingOrd '[] a
--- stabAST
---     (AST_log
---         (AST_div
---             (AST_fromInteger 1)
---             (AST_plus
---                 (AST_fromInteger 1)
---                 (AST_exp
---                     (AST_negate x)
---                 )
---             )
---         )
---     )
---     = logLogistic2 x
+-- logexpAST5 :: forall alg t a. View Floating '[] alg t => AST alg t a -> AST alg t a
+-- logexpAST5 e = go (Proxy::Proxy '[]) (Proxy::Proxy (AST alg t a)) (Proxy::Proxy (AST alg t a)) e
+--     where
+--         go :: View Floating '[] alg (s++t)
+--            => Proxy s
+--            -> Proxy (AST alg t a)
+--            -> Proxy (AST alg t a)
+--            -> (AST alg (s++t) a)
+--            -> (AST alg (s++t) a)
+--         go _ _ _ (AST_log (AST_exp a)) = a
+--         go _ _ _ (Free f) = Free $ fmapTag' go f
+
+logexpAST5 :: View Floating '[] alg t => AST alg t a -> AST alg t a
+logexpAST5 (AST_log (AST_exp a)) = a
+logexpAST5 (Free f) = Free $ fmapAST logexpAST4 f
+
+fmapAST :: (forall s. View Floating '[] alg s => AST alg s a -> AST alg s a) -> Sig alg t (AST alg t a) -> Sig alg t (AST alg t a)
+fmapAST f = undefined
+
+--     fmapTag' :: Proxy s -> Proxy a -> Proxy b -> App s a -> App s b
+
+stabAST :: AST FloatingOrd '[] a -> AST FloatingOrd '[] a
+stabAST
+    (AST_log
+        (AST_div
+            (AST_fromInteger 1)
+            (AST_plus
+                (AST_fromInteger 1)
+                (AST_exp
+                    (AST_negate x)
+                )
+            )
+        )
+    )
+    = logLogistic2 x
 
 logLogistic1 :: Floating x => x -> x
 logLogistic1 x = log(1/(1+exp(-x)))

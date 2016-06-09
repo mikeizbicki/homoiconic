@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE NoRebindableSyntax #-}
 
 module Homogeneous.PreludeInstances
     where
@@ -124,14 +125,17 @@ logexpAST4 (AST_log (AST_exp a)) = a
 logexpAST4 (Free f) = Free $ fmap logexpAST4 f
 logexpAST4 (Pure a) = Pure a
 
-testFunc :: Floating a => a -> a
-testFunc a = log(exp a)
+testFunc1 :: Floating a => a -> a
+testFunc1 a = log(exp a)
+
+testFunc2 :: Floating a => a -> a
+testFunc2 a = 1+log(exp a)
 
 -- ghci> logexpAST4 $ testFunc 2 :: AST Floating Double
 -- ((fromInteger 1)+(fromInteger 2))
 
-testFunc2 :: Floating a => a -> a
-testFunc2 a = 1+exp(exp(exp(log(log(log a)))))
+testFunc3 :: Floating a => a -> a
+testFunc3 a = 1+log(log(log(exp(exp(exp a)))))
 
 -- ghci> fixAST stabilizeAST (testFunc2 var1 :: AST Floating Var)
 -- ((fromInteger 1)+var1)
@@ -192,13 +196,34 @@ constExpr = 4+2*(8-2)-1
 -- (fromInteger 18)
 
 constFunc :: Num a => a -> a -> a
-constFunc x1 x2 = x1*2-(7-2)*x2
+constFunc x1 x2 = x1*2+(7+2)*x2
 
--- ghci> fixAST foldConstants (constFunc 2 3)
--- (fromInteger -11)
--- ghci> fixAST foldConstants (constFunc var1 var2)
--- ((var1*(fromInteger 2))-((fromInteger 5)*var2))
 
+--------------------------------------------------------------------------------
+
+-- type family Scalar a
+-- -- mkAT ''Scalar
+--
+-- class (Num a, Floating (Scalar a)) => Vector a where
+--     (.*) :: Scalar a -> a -> a
+--
+-- instance FAlgebra Vector where
+--     data Sig Vector a
+--         = Sig_dotmul (Scalar a) a
+--         | Sig_Vector_Num (Sig Num a)
+--         | Sig_Vector_Floating (Sig Floating (Scalar a))
+--     runSig (Sig_dotmul s a) = s.* a
+--     runSig (Sig_Vector_Num s) = runSig s
+--     runSig (Sig_Vector_Floating s) = runSig s
+--
+-- instance Functor (Sig Vector) where
+--     fmap f (Sig_dotmul s a) = Sig_dotmul (f s) (f a)
+--     fmap f (Sig_Vector_Num s) = Sig_Vector_Num (fmap f s)
+--     fmap f (Sig_Vector_Floating s) = Sig_Vector_Floating (fmap f s)
+--
+-- instance Foldable (Sig Vector)
+--
+-- -- mkFAlgebra ''Vector
 
 --------------------------------------------------------------------------------
 
