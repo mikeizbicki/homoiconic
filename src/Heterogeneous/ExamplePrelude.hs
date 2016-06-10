@@ -62,6 +62,7 @@ mkFAlgebra ''FloatingOrd
 type family Scalar a
 mkAT ''Scalar
 
+type instance Scalar Double = Double
 type instance Scalar Var = Var
 
 scalar1 :: AST alg '[TScalar] Var
@@ -89,6 +90,9 @@ class (Num a, Floating (Scalar a)) => Vector a where
 --     show (Sig_Vector_Num s) = show s
 --     show (Sig_Vector_Floating_Scalar s) = show s
 --     show (Sig_dotmul s a) = show s++".*"++show a
+
+-- instance {-#OVERLAPS#-} Show (Sig Vector (t0 ': t1 ': t) a) where
+--     show _ = "<<overlaps>>"
 
 mkFAlgebra ''Vector
 
@@ -127,6 +131,9 @@ instance Num a => Num (Vec3 a) where
 
 instance Floating a => Vector (Vec3 a) where
     (.*) s (Vec3 a1 a2 a3) = Vec3 (s*a1) (s*a2) (s*a3)
+
+instance Floating a => Hilbert (Vec3 a) where
+    dotProduct (Vec3 a1 a2 a3) (Vec3 b1 b2 b3) = a1*b1+a2*b2+a3*b3
 
 --------------------------------------------------------------------------------
 
@@ -189,3 +196,6 @@ logLogistic2 :: FloatingOrd x => x -> x
 logLogistic2 x = m+log(1/(exp(m)+exp(-x+m)))
     where
         m = min 0 x
+
+logLoss :: Hilbert x => x -> x -> Scalar x
+logLoss x1 x2 = logLogistic1 (dotProduct x1 x2)

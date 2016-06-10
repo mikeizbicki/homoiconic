@@ -146,6 +146,16 @@ data Free (f::[Tag]->Type->Type) (t::[Tag]) (a::Type) where
     Free0 :: TypeConstraints t a => f       t  (Free f t a)  -> Free f       t  a
     Pure  :: AppTags t a -> Free f t a
 
+-- instance
+--     ( Show (AppTag s (AppTags t a))
+--     , Show (f (s ': t) (Free f (s ': t) a))
+--     , Show (f (s ': t) (Free f       t  a))
+--     ) => Show (Free f (s ': t) a)
+--         where
+--     show (Free1 f) = "("++show f++")"
+--     show (Free0 f) = "("++show f++")"
+--     show (Pure  a) = show a
+
 instance
     ( Show      (AppTags t a)
     , Show      (f t (Free f t a))
@@ -160,13 +170,13 @@ type family ShowUntag (f::Type) :: Constraint where
     ShowUntag (f (s ':  t) (Free f (s ':  t) a))  = Show (f (s ':  t) (Free f          t  a))
     ShowUntag a = ()
 
-eval :: forall alg t a.
+runAST :: forall alg t a.
     ( FAlgebra alg
     , alg a
     ) => Free (Sig alg) t a -> AppTags t a
-eval (Pure    a) = a
-eval (Free0   s) = runSig0    (Proxy::Proxy a) $ mape eval s
-eval (Free1 s) = runSig1 (Proxy::Proxy a) $ mape eval s
+runAST (Pure  a) = a
+runAST (Free0 s) = runSig0 (Proxy::Proxy a) $ mapRun runAST s
+runAST (Free1 s) = runSig1 (Proxy::Proxy a) $ mapRun runAST s
 
 class NoCxt (a::k)
 instance NoCxt a
@@ -271,7 +281,7 @@ class Typeable alg => FAlgebra (alg::Type->Constraint) where
     runSig1 :: alg a => proxy a -> Sig alg (s ':  t) (AppTags t a) -> AppTags (s ':  t) a
     runSig0    :: alg a => proxy a -> Sig alg        t  (AppTags t a) -> AppTags        t  a
 
-    mape :: (TypeConstraints t' a)
+    mapRun :: (TypeConstraints t' a)
          => (forall s. Free (Sig alg') s a -> AppTags s a)
          -> Sig alg t (Free (Sig alg') t' a)
          -> Sig alg t (AppTags t' a)
@@ -323,13 +333,13 @@ newtype Var = Var String
 instance Show Var where
     show (Var v) = v
 
-var1 :: AST alg '[] Var
+var1 :: AppTags t Var~Var => AST alg t Var
 var1 = Pure $ Var "var1"
 
-var2 :: AST alg '[] Var
+var2 :: AppTags t Var~Var => AST alg t Var
 var2 = Pure $ Var "var2"
 
-var3 :: AST alg '[] Var
+var3 :: AppTags t Var~Var => AST alg t Var
 var3 = Pure $ Var "var3"
 
 --------------------
@@ -488,8 +498,8 @@ type Testable a = (Eq a, Arbitrary a, Typeable a)
 -- law2quickcheck p law = QC.testProperty (lawName law) $ do
 --     as <- infiniteListOf (arbitrary::Gen a)
 --     let varmap = zip (toList (lhs law) ++ toList (rhs law)) as
---     return $ (eval $ subVars (lhs law) varmap)
---           == (eval $ subVars (rhs law) varmap)
+--     return $ (runAST $ subVars (lhs law) varmap)
+--           == (runAST $ subVars (rhs law) varmap)
 
 --------------------------------------------------------------------------------
 
@@ -645,7 +655,7 @@ mkFAlgebra algName = do
                 []
 
             , FunD
-                ( mkName "mape" )
+                ( mkName "mapRun" )
                 (
                     -- for each function constructor
                     [ Clause
@@ -688,7 +698,7 @@ mkFAlgebra algName = do
                                 )
                                 ( AppE
                                     ( AppE
-                                        ( VarE $ mkName "mape" )
+                                        ( VarE $ mkName "mapRun" )
                                         ( VarE $ mkName "f" )
                                     )
                                     ( VarE $ mkName "s" )
@@ -704,7 +714,7 @@ mkFAlgebra algName = do
                         [ VarP $ mkName "f", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "mape ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "mapRun ("++nameBase algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -712,7 +722,7 @@ mkFAlgebra algName = do
             , FunD
                 ( mkName "runSig1" )
                 (
-                    -- evaluate functions
+                    -- runASTuate functions
                     ( catMaybes [ case getReturnType sigType of
                         (VarT _) -> Nothing
                         _ -> Just $ Clause
@@ -731,7 +741,7 @@ mkFAlgebra algName = do
                     | SigD sigName sigType <- decs
                     ] )
                     ++
-                    -- evaluate nested constructors
+                    -- runASTuate nested constructors
                     [ Clause
                         [ SigP
                             ( VarP $ mkName "p" )
@@ -819,7 +829,7 @@ mkFAlgebra algName = do
             , FunD
                 ( mkName "runSig0" )
                 (
-                    -- evaluate functions
+                    -- runASTuate functions
                     ( catMaybes [ case getReturnType sigType of
                         (VarT _) -> Just $ Clause
                             [ SigP
@@ -838,7 +848,7 @@ mkFAlgebra algName = do
                     | SigD sigName sigType <- decs
                     ] )
                     ++
-                    -- evaluate nested constructors
+                    -- runASTuate nested constructors
                     [ Clause
                         [ SigP
                             ( VarP $ mkName "p" )
@@ -1532,7 +1542,7 @@ mkFAlgebra algName = do
                 <- allcxt
             ]
 
-    return $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,{-instShowOverlap,-}instFree]
+    return $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
 predType2str :: Pred -> String
 predType2str (ConT t) = nameBase t

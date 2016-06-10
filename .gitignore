@@ -11,3 +11,4 @@ dist
 *.blg
 *.log
 *.pdf
+*.out
