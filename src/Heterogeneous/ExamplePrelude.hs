@@ -167,10 +167,15 @@ logexpAST4 (AST_log (AST_exp a)) = a
 
 logexpAST5 :: View Floating '[] alg t => AST alg t a -> AST alg t a
 logexpAST5 (AST_log (AST_exp a)) = a
-logexpAST5 (Free0 f) = Free0 $ fmapAST logexpAST4 f
+-- logexpAST5 (Free1 f) = Free1 $ fmapAST1 logexpAST4 f
+logexpAST5 (Free0 f) = Free0 $ fmapAST0 logexpAST4 f
+logexpAST5 (Pure  a) = Pure a
 
-fmapAST :: (forall s. View Floating '[] alg s => AST alg s a -> AST alg s a) -> Sig alg t (AST alg t a) -> Sig alg t (AST alg t a)
-fmapAST f = undefined
+fmapAST1 :: (forall s. View Floating '[] alg s => AST alg s a -> AST alg s a) -> Sig alg t (AST alg t a) -> Sig alg t (AST alg t a)
+fmapAST1 f = undefined
+
+fmapAST0 :: (forall s. View Floating '[] alg s => AST alg s a -> AST alg s a) -> Sig alg t (AST alg t a) -> Sig alg t (AST alg t a)
+fmapAST0 f = undefined
 
 --     fmapTag' :: Proxy s -> Proxy a -> Proxy b -> App s a -> App s b
 
