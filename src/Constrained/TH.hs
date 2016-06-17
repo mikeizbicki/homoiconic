@@ -644,6 +644,9 @@ mkFAlgebraNoRec algName = do
     -- FIXME:
     -- The pattern synonyns for the tagged and untagged versions are currently split into two separate cases.
     -- There's a lot of overlap in them though, and so the code would probably be nicer to merge the two cases.
+#if __GHC__GLASGOW__ < 801
+    let patSyns = []
+#else
     let patSyns = concat $
             [ if isVarT $ getReturnType sigType
                 then
@@ -848,6 +851,7 @@ mkFAlgebraNoRec algName = do
                     ]
             | SigD sigName sigType <- decs
             ]
+#endif
 
     -- construct the overlapping Show instance
     let instShowOverlap = InstanceD
