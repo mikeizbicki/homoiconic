@@ -544,6 +544,9 @@ mkFAlgebra algName = do
 
     -- construct pattern synonyms
     let patSyns =
+#if __GHC__GLASGOW__ < 801
+            []
+#else
             [ PatSynD
                 ( mkName $ "AST_" ++ renameClassMethod sigName )
                 ( PrefixPatSyn $ genericArgs sigType )
@@ -576,6 +579,7 @@ mkFAlgebra algName = do
                 )
             | SigD sigName sigType <- decs
             ]
+#endif
 
     -- return the instances
     return $ [instFAlgebra,instEqSig,instFunctor,instFoldable,instShow,instHomFree] ++ instHomViews ++ patSyns
