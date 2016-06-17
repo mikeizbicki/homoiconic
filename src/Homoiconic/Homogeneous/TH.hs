@@ -1,4 +1,4 @@
-module Homogeneous.TH
+module Homoiconic.Homogeneous.TH
     where
 
 import Prelude
@@ -10,7 +10,7 @@ import Data.Typeable
 import Data.Kind
 import GHC.Exts hiding (IsList(..))
 
-import Common.TH
+import Homoiconic.Common.TH
 import Language.Haskell.TH hiding (Type)
 import qualified Language.Haskell.TH as TH
 

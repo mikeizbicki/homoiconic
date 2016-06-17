@@ -1,57 +1,51 @@
-module Constrained.FAlgebra
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
+module Homoiconic.Heterogeneous
     (
-    -- *
+    -- * Constrained FAlgebras
       FAlgebra (..)
-    , View (..)
-    , Free (..)
     , AST
     , runAST
 
-    -- **
+    -- ** Dealing with Type Families
+    , Tag
+    , AppTag
+    , AppTags
+
+    -- ** Heterogeneous Free Monad
+    , Free (..)
+
+    -- ** Converting between FAlgebras
+    , View (..)
+
+    -- ** Variable definitions
     , Var
     , var1
     , var2
     , var3
 
-    -- **
-    , Tag
-    , AppTag
-    , AppTags
-    , TagConstraints
-    , ConsTag
-    , ConsTagCnst
-    , MkFree (..)
-
-    , Snoc
-
-    -- **
-    , FunctorTag (..)
-    , apHaskTag
-    , HaskTag
-
     -- * Template Haskell
-    , mkTag
-    , mkTag_
     , mkFAlgebra
-    , superPredicates
+    , mkTag
 
-    -- **
+    -- ** Helper functions
     , unsafeExtractSigTag0
     , unsafeExtractSigTag
     , unsafeCoerceSigTag
     , runSig1Snoc
     , runSig0Snoc
     , embedSigTag
+    , Snoc
 
-    -- **
+    -- ** Other need types
     , Proxy (..)
     , Typeable
     , Constraint
-
     )
     where
 
-import Constrained.TH
+import Homoiconic.Common.Tags
+import Homoiconic.Heterogeneous.TH
 
 import Prelude
 import Control.Monad
@@ -68,46 +62,89 @@ import Unsafe.Coerce
 
 --------------------------------------------------------------------------------
 
-type Tag = Type
+class Typeable alg => FAlgebra (alg::Type->Constraint) where
+    data Sig alg (t::[Tag]) a
 
-type family AppTag (t::Tag) (a::Type)
+    runSig1 :: alg a => proxy a -> Sig alg (s ':  t) (AppTags t a) -> AppTags (s ':  t) a
+    runSig0    :: alg a => proxy a -> Sig alg        t  (AppTags t a) -> AppTags        t  a
 
-type family AppTags (t::[Tag]) (a::Type) :: Type where
-    AppTags '[]       a = a
-    AppTags (x ': xs) a = AppTag x (AppTags xs a)
+    mapRun :: ()
+         => (forall s. Free (Sig alg') s a -> AppTags s a)
+         -> Sig alg t (Free (Sig alg') t' a)
+         -> Sig alg t (AppTags t' a)
 
-type family Snoc (xs :: [k]) (y::k) where
-    Snoc '[]       y = '[y]
-    Snoc (x ': xs) y = x ': (Snoc xs y)
+type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
 
--- type family Snoc (xs :: [k]) (y::k) = r | r -> xs y where
---     Snoc '[]       y = '[y]
---     Snoc '[x]      y = '[x,y]
---     Snoc '[x1,x2]  y = '[x1,x2,y]
-
-type family (++) (xs1:: [x]) (xs2:: [x]) :: [x] where
-    '[] ++ '[] = '[]
-    '[] ++ xs2 = xs2
-    xs1 ++ '[] = xs1
-    (x ': xs1) ++ xs2 = x ': (xs1++xs2)
+runAST :: forall alg t a.
+    ( FAlgebra alg
+    , alg a
+    ) => Free (Sig alg) t a -> AppTags t a
+runAST (Pure  a) = a
+runAST (Free0 s) = runSig0 (Proxy::Proxy a) $ mapRun runAST s
+runAST (Free1 s) = runSig1 (Proxy::Proxy a) $ mapRun runAST s
 
 ----------------------------------------
 
-appCoerce
-    :: Proxy t
-    -> Proxy s
-    -> Proxy a
-    -> AppTags t (AppTag s a)
-    -> AppTags (t `Snoc` s) a
-appCoerce _ _ _ = unsafeCoerce
+data Free (f::[Tag]->Type->Type) (t::[Tag]) (a::Type) where
+    Free1 :: f (s ': t) (Free f t a)  -> Free f (s ': t) a
+    Free0 :: f       t  (Free f t a)  -> Free f       t  a
+    Pure  :: AppTags t a -> Free f t a
 
-sigCoerce
-    :: Proxy t
-    -> Proxy s
-    -> Proxy a
-    -> Sig alg t (AppTags (t `Snoc` s) a)
-    -> Sig alg t (AppTags  t (AppTag s a))
-sigCoerce _ _ _ = unsafeCoerce
+instance
+    ( Show      (AppTags t a)
+    , Show      (f t (Free f t a))
+    , ShowUntag (f t (Free f t a))
+    ) => Show (Free f t a)
+        where
+    show (Free1 f) = "("++show f++")"
+    show (Free0 f) = "("++show f++")"
+    show (Pure  a) = show a
+
+type family ShowUntag (f::Type) :: Constraint where
+    ShowUntag (f (s ':  t) (Free f (s ':  t) a))  = Show (f (s ':  t) (Free f          t  a))
+    ShowUntag a = ()
+
+----------------------------------------
+
+class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
+    embedSig          :: Sig alg1 t1  a -> Sig alg2 t2  a
+    unsafeExtractSig  :: Sig alg2 t2  a -> Sig alg1 t1  a
+
+embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
+embedSigTag = embedSig
+
+unsafeExtractSigTag ::
+    ( View alg1 '[s] alg2 (s:t)
+    ) => Sig alg2 (s ': t) (Free (Sig alg2) t a) -> Sig alg1 '[s] (Free (Sig alg2) t a)
+unsafeExtractSigTag = unsafeExtractSig
+
+unsafeExtractSigTag0 ::
+    ( View alg1 '[] alg2 t
+    ) => Sig alg2 t (Free (Sig alg2) t a) -> Sig alg1 '[] (Free (Sig alg2) t a)
+unsafeExtractSigTag0 = unsafeExtractSig
+
+instance FAlgebra alg => View alg t alg t where
+    embedSig = id
+    unsafeExtractSig = id
+
+----------------------------------------
+
+newtype Var = Var String
+    deriving (Eq)
+
+instance Show Var where
+    show (Var v) = v
+
+var1 :: AppTags t Var~Var => AST alg t Var
+var1 = Pure $ Var "var1"
+
+var2 :: AppTags t Var~Var => AST alg t Var
+var2 = Pure $ Var "var2"
+
+var3 :: AppTags t Var~Var => AST alg t Var
+var3 = Pure $ Var "var3"
+
+--------------------------------------------------------------------------------
 
 runSig0Snoc :: forall proxy alg a t u.
     ( FAlgebra alg
@@ -118,7 +155,7 @@ runSig0Snoc :: forall proxy alg a t u.
       -> Sig alg t (AppTags (t `Snoc` u) a)
       -> AppTags (t `Snoc` u) a
 runSig0Snoc ps pa u
-    = appCoerce pt ps pa $ runSig0 (Proxy::Proxy (AppTag u a)) $ sigCoerce pt ps pa u
+    = coerce_AppTags_Snoc pt ps pa $ runSig0 (Proxy::Proxy (AppTag u a)) $ coerce_AppTags_Snoc_f pt ps pa u
     where
         pt = Proxy :: Proxy t
 
@@ -143,8 +180,27 @@ runSig1Snoc pu ps pt pa s
 unsafeCoerceSigTag :: proxy t' -> Sig alg t a -> Sig alg t' a
 unsafeCoerceSigTag _ = unsafeCoerce
 
-----------------------------------------
+--------------------------------------------------------------------------------
+-- generate instances for the Prelude's hierarchy using template haskell
 
+mkFAlgebra ''Num
+mkFAlgebra ''Fractional
+mkFAlgebra ''Floating
+-- mkFAlgebra ''Eq
+-- instance FAlgebra Eq
+-- instance Functor (Sig Eq)
+-- instance Foldable (Sig Eq)
+-- instance Show (Sig Eq a)
+-- instance Eq (Sig Eq a)
+-- mkFAlgebra ''Ord
+--
+-- class (Floating a, Ord a) => FloatingOrd a
+-- instance {-#OVERLAPPABLE#-} (Floating a, Ord a) => FloatingOrd a
+-- mkFAlgebra ''FloatingOrd
+
+--------------------------------------------------------------------------------
+
+{-
 data HaskTag {-cxt-} a b where
     HaskTag ::
         ( forall (s::[Tag]). () --cxt s
@@ -161,54 +217,6 @@ apHaskTag pt (HaskTag f) = f pt (Proxy::Proxy a) (Proxy::Proxy b)
 
 class FunctorTag (f::[Tag]->Type->Type) where
     fmapTag :: HaskTag a b -> f t a -> f t b
-
-----------------------------------------
-
-type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
-
-type family ConsTag (t::Tag) (ts::[Tag]) :: [Tag]
-type family ConsTagCnst (t::Tag) (ts::[Tag]) :: Constraint
-type family TagConstraints (t::[Tag]) (a::Type) :: Constraint
-class MkFree s (t::[Tag]) a where
-    mkFree :: proxy s -> f (ConsTag s t) (Free f t a) -> Free f (ConsTag s t) a
-
-data Free (f::[Tag]->Type->Type) (t::[Tag]) (a::Type) where
-    Free1 :: TagConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
-    Free0 :: TagConstraints t a => f       t  (Free f t a)  -> Free f       t  a
-    Pure  :: AppTags t a -> Free f t a
-
--- instance
---     ( Show (AppTag s (AppTags t a))
---     , Show (f (s ': t) (Free f (s ': t) a))
---     , Show (f (s ': t) (Free f       t  a))
---     ) => Show (Free f (s ': t) a)
---         where
---     show (Free1 f) = "("++show f++")"
---     show (Free0 f) = "("++show f++")"
---     show (Pure  a) = show a
-
-instance
-    ( Show      (AppTags t a)
-    , Show      (f t (Free f t a))
-    , ShowUntag (f t (Free f t a))
-    ) => Show (Free f t a)
-        where
-    show (Free1 f) = "("++show f++")"
-    show (Free0 f) = "("++show f++")"
-    show (Pure  a) = show a
-
-type family ShowUntag (f::Type) :: Constraint where
-    ShowUntag (f (s ':  t) (Free f (s ':  t) a))  = Show (f (s ':  t) (Free f          t  a))
-    ShowUntag a = ()
-
-runAST :: forall alg t a.
-    ( FAlgebra alg
-    , alg a
-    ) => Free (Sig alg) t a -> AppTags t a
-runAST (Pure  a) = a
-runAST (Free0 s) = runSig0 (Proxy::Proxy a) $ mapRun runAST s
-runAST (Free1 s) = runSig1 (Proxy::Proxy a) $ mapRun runAST s
-
 class NoCxt (a::k)
 instance NoCxt a
 
@@ -303,64 +311,4 @@ appFree' = unsafeCoerce
 
 appApp :: Proxy (s::[Tag]) -> Proxy t -> Proxy a -> AppTags (s++t) a -> AppTags s (AppTags t a)
 appApp _ _ _ = unsafeCoerce
-
-----------------------------------------
-
-class Typeable alg => FAlgebra (alg::Type->Constraint) where
-    data Sig alg (t::[Tag]) a
-
-    runSig1 :: alg a => proxy a -> Sig alg (s ':  t) (AppTags t a) -> AppTags (s ':  t) a
-    runSig0    :: alg a => proxy a -> Sig alg        t  (AppTags t a) -> AppTags        t  a
-
-    mapRun :: (TagConstraints t' a)
-         => (forall s. Free (Sig alg') s a -> AppTags s a)
-         -> Sig alg t (Free (Sig alg') t' a)
-         -> Sig alg t (AppTags t' a)
-
---     mapf :: (TypeConstraints t' a)
---          => (forall s. Free (Sig alg') s a -> Free (Sig alg') s a)
---          -> Sig alg t (Free (Sig alg') t' a)
---          -> Sig alg t (Free (Sig alg') t' a)
-
-----------------------------------------
-
-class (FAlgebra alg1, FAlgebra alg2) => View alg1 t1 alg2 t2 where
-    embedSig          :: Sig alg1       t1  a -> Sig alg2       t2  a
-    unsafeExtractSig  :: Sig alg2       t2  a -> Sig alg1       t1  a
-
---     embedAST         :: Free (Sig alg1) t1 a -> Free (Sig alg2) t2 a
---     unsafeExtractAST :: Free (Sig alg2) t2 a -> Free (Sig alg1) t1 a
-
-embedSigTag :: View alg1 (t ': t1) alg2 (t ': t2) => Sig alg1 (t ': t1) a -> Sig alg2 (t ': t2) a
-embedSigTag = embedSig
-
-unsafeExtractSigTag ::
-    ( View alg1 '[s] alg2 (s:t)
-    ) => Sig alg2 (s ': t) (Free (Sig alg2) t a) -> Sig alg1 '[s] (Free (Sig alg2) t a)
-unsafeExtractSigTag = unsafeExtractSig
-
-unsafeExtractSigTag0 ::
-    ( View alg1 '[] alg2 t
-    ) => Sig alg2 t (Free (Sig alg2) t a) -> Sig alg1 '[] (Free (Sig alg2) t a)
-unsafeExtractSigTag0 = unsafeExtractSig
-
-instance FAlgebra alg => View alg t alg t where
-    embedSig = id
-    unsafeExtractSig = id
-
---------------------------------------------------------------------------------
-
-newtype Var = Var String
-    deriving (Eq)
-
-instance Show Var where
-    show (Var v) = v
-
-var1 :: AppTags t Var~Var => AST alg t Var
-var1 = Pure $ Var "var1"
-
-var2 :: AppTags t Var~Var => AST alg t Var
-var2 = Pure $ Var "var2"
-
-var3 :: AppTags t Var~Var => AST alg t Var
-var3 = Pure $ Var "var3"
+-}

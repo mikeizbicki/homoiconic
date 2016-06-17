@@ -19,7 +19,7 @@
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 {-# OPTIONS_GHC -Wno-missing-methods #-}
 
-module Homogeneous.FAlgebra
+module Homoiconic.Homogeneous
     (
 
     -- * FAlgebra
@@ -42,7 +42,7 @@ module Homogeneous.FAlgebra
     )
     where
 
-import Homogeneous.TH
+import Homoiconic.Homogeneous.TH
 
 import Prelude
 import Control.Monad

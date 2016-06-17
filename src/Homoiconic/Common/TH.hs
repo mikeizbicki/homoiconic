@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 
-module Common.TH
+module Homoiconic.Common.TH
     where
 
 import Prelude
