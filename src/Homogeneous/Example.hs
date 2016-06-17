@@ -6,10 +6,13 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoRebindableSyntax #-}
 
+{-# OPTIONS_GHC -Wno-missing-methods #-}
+
 module Homogeneous.PreludeInstances
     where
 
 import Homogeneous.FAlgebra
+import Homogeneous.Variety
 import Prelude
 
 mkFAlgebra ''Num
@@ -59,11 +62,11 @@ instance Num a => Num (Vec3 a) where
     (Vec3 a1 a2 a3)-(Vec3 b1 b2 b3) = Vec3 (a1-b1) (a2-b2) (a3-b3)
     (Vec3 a1 a2 a3)*(Vec3 b1 b2 b3) = Vec3 (a1*b1) (a2*b2) (a3*b3)
 
-instance Approximate Num a => Approximate Num (Vec3 a) where
-    lawError law xs = Vec3
-        (lawError law $ map a xs)
-        (lawError law $ map b xs)
-        (lawError law $ map c xs)
+-- instance Approximate Num a => Approximate Num (Vec3 a) where
+--     lawError law xs = Vec3
+--         (lawError law $ map a xs)
+--         (lawError law $ map b xs)
+--         (lawError law $ map c xs)
 
 --------------------------------------------------------------------------------
 
