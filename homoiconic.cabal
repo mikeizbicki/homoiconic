@@ -90,7 +90,8 @@ library
 
 --------------------------------------------------------------------------------
 
-Test-Suite homogeneous
-    type:       exitcode-stdio-1.0
-    main-is:    examples/Homogeneous.hs
-    build-depends: base
+-- FIXME
+-- Test-Suite homogeneous
+--     type:       exitcode-stdio-1.0
+--     main-is:    examples/Homogeneous.hs
+--     build-depends: base
