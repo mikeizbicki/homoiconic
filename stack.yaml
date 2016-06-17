@@ -1,0 +1,7 @@
+flags: {}
+packages:
+- '.'
+extra-deps:
+    []
+resolver: nightly-2016-06-15
+compiler: ghc-8.0.1

@@ -22,7 +22,10 @@ module Constrained.FAlgebra
     , AppTag
     , AppTags
 --     , TypeConstraints
+    , TagConstraints
     , ConsTag
+    , ConsTagCnst
+    , MkFree (..)
 
     , Snoc
 
@@ -33,8 +36,9 @@ module Constrained.FAlgebra
 
     -- * Template Haskell
     , mkTag
-    , mkTagIdempotent
+    , mkTag_
     , mkFAlgebra
+    , superPredicates
 
     -- **
     , unsafeExtractSigTag0
@@ -186,11 +190,15 @@ class FunctorTag (f::[Tag]->Type->Type) where
 
 type AST (alg::Type->Constraint) t a = Free (Sig alg) t a
 
-type family ConsTag (t::Tag) (ts::[Tag]) = (r :: [Tag])
+type family ConsTag (t::Tag) (ts::[Tag]) :: [Tag]
+type family ConsTagCnst (t::Tag) (ts::[Tag]) :: Constraint
+type family TagConstraints (t::[Tag]) (a::Type) :: Constraint
+class MkFree s (t::[Tag]) a where
+    mkFree :: proxy s -> f (ConsTag s t) (Free f t a) -> Free f (ConsTag s t) a
 
 data Free (f::[Tag]->Type->Type) (t::[Tag]) (a::Type) where
-    Free1 :: f (s ': t) (Free f t a)  -> Free f (s ': t) a
-    Free0 :: f       t  (Free f t a)  -> Free f       t  a
+    Free1 :: TagConstraints t a => f (s ': t) (Free f t a)  -> Free f (s ': t) a
+    Free0 :: TagConstraints t a => f       t  (Free f t a)  -> Free f       t  a
     Pure  :: AppTags t a -> Free f t a
 
 -- instance
@@ -328,7 +336,7 @@ class Typeable alg => FAlgebra (alg::Type->Constraint) where
     runSig1 :: alg a => proxy a -> Sig alg (s ':  t) (AppTags t a) -> AppTags (s ':  t) a
     runSig0    :: alg a => proxy a -> Sig alg        t  (AppTags t a) -> AppTags        t  a
 
-    mapRun :: () --(TypeConstraints t' a)
+    mapRun :: (TagConstraints t' a)
          => (forall s. Free (Sig alg') s a -> AppTags s a)
          -> Sig alg t (Free (Sig alg') t' a)
          -> Sig alg t (AppTags t' a)
@@ -559,9 +567,14 @@ isIdempotent n = return $ if nameBase n=="Scalar" || nameBase n =="Logic"
     then True
     else False
 
--- | Constructs the needed declarations for a type family
+-- | Constructs the needed declarations for a type family assuming no constraints on the type family
 mkTag :: Name -> Q [Dec]
-mkTag atName = do
+mkTag = mkTag_ []
+
+-- | Constructs the declarations for a type family that is constrainted by some context.
+-- Currently, the only supported constraints are idempocency constraints.
+mkTag_ :: Cxt -> Name -> Q [Dec]
+mkTag_ cxt atName = do
 
     -- validate input
     qinfo <- reify atName
@@ -573,7 +586,9 @@ mkTag atName = do
 
     -- common names
     let tagName = mkName $ "T"++nameBase atName
-        varName = mkName "a"
+
+    --------------------
+    -- all tags need these declarations
 
     -- construct the data Tag
     let decT = DataD
@@ -588,129 +603,191 @@ mkTag atName = do
     let instApp = TySynInstD
             ( mkName "AppTag" )
             ( TySynEqn
-                [ ConT tagName, VarT varName ]
+                [ ConT tagName, VarT $ mkName "a" ]
                 ( AppT
                     ( ConT atName )
-                    ( VarT varName )
-                )
-            )
-
-    -- We need to add the TypeConstraints instance here
---     let tyCnst = TySynInstD
---             ( mkName "TypeConstraints" )
---             ( TySynEqn
---                 [ AppT
---                     ( AppT
---                         PromotedConsT
---                         ( ConT tagName )
---                     )
---                     ( VarT $ mkName "t" )
---                 , VarT $ mkName "a"
---                 ]
---                 ( TupleT 0 )
---             )
---     return [tyCnst, decT, instApp]
-
-    return [decT, instApp]
-
-class Idempotent
-
-mkTagIdempotent :: Name -> Q [Dec]
-mkTagIdempotent atName = do
-    tagDecs <- mkTag atName
-
-    -- common names
-    let tagName = mkName $ "T"++nameBase atName
-
-    let instCons_ = ClosedTypeFamilyD
-            ( TypeFamilyHead
-                ( mkName $ "Cons_"++nameBase tagName )
-                [ PlainTV $ mkName "t" ]
-                NoSig
-                Nothing
-            )
-            [ TySynEqn
-                [ AppT
-                    ( AppT
-                        PromotedConsT
-                        ( ConT tagName )
-                    )
-                    ( VarT $ mkName "t" )
-                ]
-                ( AppT
-                    ( AppT
-                        PromotedConsT
-                        ( ConT tagName )
-                    )
-                    ( VarT $ mkName "t" )
-                )
-            , TySynEqn
-                [ VarT $ mkName "t" ]
-                ( AppT
-                    ( AppT
-                        PromotedConsT
-                        ( ConT tagName )
-                    )
-                    ( VarT $ mkName "t" )
-                )
-            ]
-
-
-    let tyCnst_ = ClosedTypeFamilyD
-            ( TypeFamilyHead
-                ( mkName $ "TypeConstraints_"++nameBase tagName )
-                [ PlainTV $ mkName "t"
-                , PlainTV $ mkName "a"
-                ]
-                ( KindSig $ ConT $ mkName "Constraint" )
-                Nothing
-            )
-            [ TySynEqn
-                [ AppT
-                    ( AppT
-                        PromotedConsT
-                        ( ConT tagName )
-                    )
-                    ( VarT $ mkName "t" )
-                , VarT $ mkName "a"
-                ]
-                ( AppT
-                    ( AppT
-                        ( ConT $ mkName $ "TypeConstraints_"++nameBase tagName )
-                        ( VarT $ mkName "t" )
-                    )
-                    ( VarT $ mkName "a" )
-                )
-            , TySynEqn
-                [ VarT $ mkName "t"
-                , VarT $ mkName "a"
-                ]
-                ( TupleT 0 )
-            ]
-
-    let tyCnst = TySynInstD
-            ( mkName "TypeConstraints" )
-            ( TySynEqn
-                [ AppT
-                    ( AppT
-                        PromotedConsT
-                        ( ConT tagName )
-                    )
-                    ( VarT $ mkName "t" )
-                , VarT $ mkName "a"
-                ]
-                ( AppT
-                    ( AppT
-                        ( ConT $ mkName $ "TypeConstraints_"++nameBase tagName )
-                        ( VarT $ mkName "t" )
-                    )
                     ( VarT $ mkName "a" )
                 )
             )
 
-    return $ tagDecs++[instCons_,tyCnst_,tyCnst]
+    -- generate an overlappable MkFree instance that always behave like Free1
+    let instMkFreeOverlap = InstanceD
+            ( Just Overlappable )
+            [ AppT
+                ( AppT
+                    ( ConT $ mkName "TagConstraints" )
+                    ( VarT $ mkName "t" )
+                )
+                ( VarT $ mkName "a" )
+            , AppT
+                ( AppT
+                    EqualityT
+                    ( AppT
+                        ( AppT
+                            ( ConT $ mkName "ConsTag" )
+                            ( ConT $ tagName )
+                        )
+                        ( VarT $ mkName "t" )
+                    )
+                )
+                ( AppT
+                    ( AppT
+                        PromotedConsT
+                        ( ConT $ tagName )
+                    )
+                    ( VarT $ mkName "t" )
+                )
+            ]
+            ( AppT
+                ( AppT
+                    ( AppT
+                        ( ConT $ mkName "MkFree" )
+                        ( ConT $ tagName )
+                    )
+                    ( VarT $ mkName "t" )
+                )
+                ( VarT $ mkName "a" )
+            )
+            [ FunD
+                ( mkName "mkFree" )
+                [ Clause
+                    [ VarP $ mkName "p" ]
+                    ( NormalB $ ConE $ mkName "Free1" )
+                    []
+                ]
+            ]
 
--- | Generates the FAlgebra instance
+    --------------------
+    -- these declarations depend on the tag's cxt
+    let cxt' = flip filter cxt $ \t -> case t of
+            (AppT (AppT EqualityT _) _) -> True
+            (AppT (AppT (ConT n) _) _) -> show n == "Data.Type.Equality.~"
+            _ -> False
+
+    cnsts <- return $ case cxt' of
+
+        -- there's no constraints
+        [] ->
+            -- ConsTag is the same as PromotedConsT
+            [ TySynInstD
+                ( mkName "ConsTag" )
+                ( TySynEqn
+                    [ ConT tagName , VarT $ mkName "ts" ]
+                    ( AppT
+                        ( AppT
+                            PromotedConsT
+                            ( ConT tagName )
+                        )
+                        ( VarT $ mkName "ts" )
+                    )
+                )
+            ]
+
+        -- there's exactly one idempotency constraint
+        -- FIXME:
+        -- the check that the constraint is an idempotency is not restrictive enough
+        cnst@[(AppT (AppT _ t1) t2)] -> if maxDepth/=minDepth+1
+            then error $ "mkTag_ constraint too complex: "++show cnst
+            else
+                -- ConsTag needs to call out to the ConsTag_algName closed family
+                [ TySynInstD
+                    ( mkName "ConsTag" )
+                    ( TySynEqn
+                        [ ConT tagName , VarT $ mkName "ts" ]
+                        ( AppT
+                            ( ConT $ mkName $ "ConsTag_"++nameBase tagName )
+                            ( VarT $ mkName "ts" )
+                        )
+                    )
+
+                -- create the ConsTag_algName closed family
+                , ClosedTypeFamilyD
+                    ( TypeFamilyHead
+                        ( mkName $ "ConsTag_"++nameBase tagName )
+                        [ PlainTV $ mkName "ts" ]
+                        NoSig
+                        Nothing
+                    )
+                    [ let t = foldl'
+                            ( \b _ -> AppT
+                                ( AppT
+                                    PromotedConsT
+                                    ( ConT tagName )
+                                )
+                                b
+                            )
+                            ( VarT $ mkName "ts" )
+                            ( replicate minDepth () )
+                      in TySynEqn [t] (t)
+                    , TySynEqn
+                        [ VarT $ mkName "ts" ]
+                        ( AppT
+                            ( AppT
+                                PromotedConsT
+                                ( ConT tagName )
+                            )
+                            ( VarT $ mkName "ts" )
+                        )
+                    ]
+                ]
+                ++
+                -- create MkFree instances
+                [ let tagsType =
+                        ( foldl'
+                            ( \b _ -> AppT
+                                ( AppT
+                                    PromotedConsT
+                                    ( ConT tagName )
+                                )
+                                b
+                            )
+                            ( if i==minDepth
+                                then VarT $ mkName "t"
+                                else PromotedNilT
+                            )
+                            ( replicate i () )
+                        )
+                  in InstanceD
+                    Nothing
+                    [ AppT
+                        ( AppT
+                            ( ConT $ mkName "TagConstraints" )
+                            tagsType
+                        )
+                        ( VarT $ mkName "a" )
+                    ]
+                    ( AppT
+                        ( AppT
+                            ( AppT
+                                ( ConT $ mkName "MkFree" )
+                                ( ConT $ tagName )
+                            )
+                            tagsType
+                        )
+                        ( VarT $ mkName "a" )
+                    )
+                    [ FunD
+                        ( mkName "mkFree" )
+                        [ Clause
+                            [ VarP $ mkName "p" ]
+                            ( NormalB $ ConE $ if i==minDepth
+                                then mkName "Free0"
+                                else mkName "Free1"
+                            )
+                            []
+                        ]
+                    ]
+                | i <- [0..minDepth]
+                ]
+
+
+            where
+                maxDepth = max (depthSameAppT t1) (depthSameAppT t2)
+                minDepth = min (depthSameAppT t1) (depthSameAppT t2)
+
+    return $ cnsts ++ [instMkFreeOverlap, decT, instApp]
+
+-- | Generates the FAlgebra instance for the specified name and all of its dependencies recursively
 mkFAlgebra :: Name -> Q [Dec]
 mkFAlgebra algName = do
 
@@ -719,6 +796,36 @@ mkFAlgebra algName = do
     (cxt,rawdecs) <- case qinfo of
         ClassI (ClassD cxt _ [_] _ decs) _ -> return (cxt,decs)
         _ -> error $ "mkFAlgebra called on "
+            ++show algName
+            ++", which is not a class of kind `Type -> Constraint`"
+
+    -- common variables we'll need later
+    allcxt <- superPredicates $ AppT (ConT algName) (VarT $ mkName "t")
+
+    -- For all the superclasses without FAlgebras, generate them
+    prereqs <- fmap (nub . concat) $ sequence
+        [ do
+            qinfo <- reify ''FAlgebra
+            case qinfo of
+                (ClassI _ insts) -> do
+                    if (ConT predClass) `elem` map (\(InstanceD _ _ (AppT _ t) _) -> t) insts
+                        then return []
+                        else mkFAlgebraNoRec predClass
+        | PredInfo (AppT (ConT predClass) _) _ _ <- allcxt
+        ]
+
+    return prereqs
+
+
+-- | Generates the FAlgebra instance for the specified name without recusively generating dependencies
+mkFAlgebraNoRec :: Name -> Q [Dec]
+mkFAlgebraNoRec algName = do
+
+    -- validate input and extract the class functions
+    qinfo <- reify algName
+    (cxt,rawdecs) <- case qinfo of
+        ClassI (ClassD cxt _ [_] _ decs) _ -> return (cxt,decs)
+        _ -> error $ "mkFAlgebraNoRec called on "
             ++show algName
             ++", which is not a class of kind `Type -> Constraint`"
 
@@ -736,24 +843,12 @@ mkFAlgebra algName = do
         thisPred = AppT (ConT algName) (VarT tagName)
     allcxt <- superPredicates thisPred
 
-    -- For all the superclasses without FAlgebras, generate them
-    prereqs <- fmap (nub . concat) $ sequence
-        [ do
-            qinfo <- reify ''FAlgebra
-            case qinfo of
-                (ClassI _ insts) -> do
-                    if (ConT predClass) `elem` map (\(InstanceD _ _ (AppT _ t) _) -> t) insts
-                        then return []
-                        else mkFAlgebra predClass
-        | AppT (ConT predClass) _ <- cxt
-        ]
-
     -- construct associated types
     -- FIXME:
     -- Should this construct non-associated types that happen to be used as well?
     -- If so, should we prevent duplicate instances from being created?
     ats <- fmap concat $ sequence
-        [ mkTag atName
+        [ mkTag_ cxt atName
         | OpenTypeFamilyD (TypeFamilyHead atName _ _ _) <- decs
         ]
 
@@ -771,7 +866,7 @@ mkFAlgebra algName = do
                             ( ConT $ mkName "Sig" )
                             ( ConT $ algName )
                         )
-                        ( predType2tagType PromotedNilT $ getReturnType $ subForall varName sigType )
+                        ( pred2tag PromotedNilT $ getReturnType $ subForall varName sigType )
                     )
                     ( VarT varName )
                 )
@@ -965,15 +1060,6 @@ mkFAlgebra algName = do
                                 ( AppE
                                     ( VarE $ mkName "runSig1" )
                                     ( VarE $ mkName "p" )
---                                     ( case predType of
---                                         (VarT _)  -> VarE $ mkName "p"
---                                         otherwise -> SigE
---                                             ( ConE $ mkName "Proxy" )
---                                             ( AppT
---                                                 ( ConT $ mkName "Proxy" )
---                                                 ( subAllVars varName predType )
---                                             )
---                                     )
                                 )
                                 ( VarE $ mkName "s" )
                             _ -> AppE
@@ -1118,7 +1204,7 @@ mkFAlgebra algName = do
                                 ( VarT tagName )
                             , AppT
                                 ( AppT
-                                    ( ConT $ mkName "TypeConstraints" )
+                                    ( ConT $ mkName "TagConstraints" )
                                     ( VarT tagName )
                                 )
                                 ( VarT varName )
@@ -1140,7 +1226,7 @@ mkFAlgebra algName = do
                                                     )
                                                     ( if isVarT a
                                                         then VarT tagName
-                                                        else predType2tagType (VarT tagName) a
+                                                        else pred2tag (VarT tagName) a
                                                     )
                                                 )
                                                 ( VarT varName )
@@ -1210,14 +1296,14 @@ mkFAlgebra algName = do
                                             ( ConT $ mkName "View" )
                                             ( ConT $ algName )
                                         )
-                                        ( predType2tagType PromotedNilT $ getReturnType sigType )
+                                        ( pred2tag PromotedNilT $ getReturnType sigType )
                                     )
                                     ( VarT $ mkName "alg" )
                                 )
-                                ( predType2tagType (VarT tagName) $ getReturnType sigType )
+                                ( pred2tag (VarT tagName) $ getReturnType sigType )
                             , AppT
                                 ( AppT
-                                    ( ConT $ mkName "TypeConstraints" )
+                                    ( ConT $ mkName "TagConstraints" )
                                     ( VarT tagName )
                                 )
                                 ( VarT varName )
@@ -1237,7 +1323,7 @@ mkFAlgebra algName = do
                                                 )
                                                 ( if isVarT a
                                                     then VarT tagName
-                                                    else predType2tagType (VarT tagName) a
+                                                    else pred2tag (VarT tagName) a
                                                 )
                                             )
                                             ( VarT varName )
@@ -1256,7 +1342,7 @@ mkFAlgebra algName = do
                                         )
                                         ( if isVarT $ getReturnType sigType
                                             then VarT tagName
-                                            else predType2tagType (VarT tagName) $ getReturnType sigType
+                                            else pred2tag (VarT tagName) $ getReturnType sigType
                                         )
                                     )
                                     ( VarT varName )
@@ -1496,109 +1582,35 @@ mkFAlgebra algName = do
             ]
 
     -- construct the `View alg '[] alg' t => alg (Free (Sig alg') t a)` instance
-    let algName' = mkName "alg'"
-
-
---     superclassCxts :: [Pred] <- fmap concat $ fmap concat $ sequence [do
---         qinfo <- reify predClass
---         inst <- case qinfo of
---             ClassI _ insts -> do
---                 let go inst = case inst of
---                         (InstanceD _ _ (AppT _ (AppT (AppT (AppT (ConT n) _) _) _)) _) ->
---                             if nameBase n=="Free"
---                                 then True
---                                 else False
---                         _ -> False
---                 return $ filter go insts
---         trace "" $ return ()
---         trace ("algName="++nameBase algName) $ return ()
---         trace ("predType="++show predType) $ return ()
---         trace ("inst="++show inst) $ return ()
---         return
---             $ map (\(InstanceD _ cxt _ _) -> cxt)
---             $ inst
---         | AppT (ConT predClass) predType <- cxt
---         ]
-
---     let idemps = ["Scalar"]
-    idemps <- do
-        qinfo <- reify ''Idempotent
-        return []
-
-
     let instFree = InstanceD
             Nothing
             ( nub $
-                [ AppT
-                    ( AppT
-                        ( ConT $ mkName "TypeConstraints" )
-                        ( VarT tagName )
-                    )
-                    ( VarT varName )
-                ]
-                ++
-                [ AppT
-                    ( AppT
-                        EqualityT
+                -- the `TagConstraints` instance
+                (
+                    [ AppT
                         ( AppT
-                            ( ConT $ mkName $ "Cons_T"++nameBase n )
-                            ( AppT
-                                ( ConT $ mkName $ "Cons_T"++nameBase n )
-                                ( VarT $ mkName "t" )
-                            )
+                            ( ConT $ mkName "TagConstraints" )
+                            ( type2tag predType )
                         )
-                    )
-                    ( AppT
-                        ( ConT $ mkName $ "Cons_T"++nameBase n )
-                        ( VarT $ mkName "t" )
-                    )
-                | n <- map mkName idemps
-                ]
--- --                 ++
--- --                 map renameVars superclassCxts
---                 ++
---                 [ AppT
---                     ( ConT predClass )
---                     ( subAllVars
--- --                         ( VarT varName )
---                         ( AppT
---                             ( AppT
---                                 ( AppT
---                                     ( ConT $ mkName "Free" )
---                                     ( AppT
---                                         ( ConT $ mkName "Sig" )
---                                         ( VarT $ mkName "alg" )
---                                     )
---                                 )
---                                 ( VarT $ tagName )
---                             )
---                             ( VarT $ varName )
---                         )
---                         predType
---                     )
---                 | AppT (ConT predClass) predType <- cxt
---                 ]
---                 ++
---                 [ AppT
---                     ( AppT
---                         ( AppT
---                             ( AppT
---                                 ( ConT $ mkName "View" )
---                                 ( ConT algName )
---                             )
---                             PromotedNilT
---                         )
---                         ( VarT algName' )
---                     )
---                     ( predType2tagType
---                         ( VarT tagName )
---                         ( getReturnType sigType )
---                     )
---                 | SigD _ sigType <- decs
---                 ]
-
+                        ( VarT $ mkName "a" )
+                    | PredInfo
+                        (AppT (ConT predClass) predType)
+                        _
+                        _
+                        <- allcxt
+                    ]
+                    ++
+                    [ AppT
+                        ( AppT
+                            ( ConT $ mkName "TagConstraints" )
+                            ( VarT $ mkName "t" )
+                        )
+                        ( VarT $ mkName "a" )
+                    ]
+                )
                 ++
-                ( nub $ concat $
+                -- the `View ...` constraints
+                ( concat $
                     [   [ AppT
                             ( AppT
                                 ( AppT
@@ -1606,12 +1618,12 @@ mkFAlgebra algName = do
                                         ( ConT $ mkName "View" )
                                         ( ConT predClass )
                                     )
-                                    ( predType2tagType PromotedNilT $ getReturnType sigType )
+                                    ( cons2consTag $ pred2tag PromotedNilT $ getReturnType sigType )
                                 )
-                                ( VarT algName' )
+                                ( VarT $ mkName "alg'" )
                             )
-                            ( predType2tagType
-                                ( predType2tagType (VarT tagName) predType )
+                            ( cons2consTag $ pred2tag
+                                ( pred2tag (VarT tagName) predType )
                                 ( getReturnType sigType )
                             )
                         | SigD _ sigType <- decs
@@ -1623,6 +1635,74 @@ mkFAlgebra algName = do
                         <- allcxt
                     ]
                 )
+                ++
+                -- the ConsTagCnst constraints
+                -- FIXME: ensure that `c` is set correctly
+                ( concat $
+                    [   [ AppT
+                            ( AppT
+                                EqualityT
+                                ( type2tag $ subAllVars predType t1 )
+                            )
+                            ( type2tag $ subAllVars predType t2 )
+                        | (AppT (AppT c t1) t2) <- cxt
+                        ]
+                    | PredInfo
+                        (AppT (ConT predClass) predType)
+                        (ClassI (ClassD cxt _ _ _ _) _)
+                        _
+                        <- allcxt
+                    ]
+                )
+                ++
+                -- MkFree instances
+                -- FIXME: ensure that `c` is set correctly
+                [ AppT
+                    ( AppT
+                        ( AppT
+                            ( ConT $ mkName "MkFree" )
+                            ( ConT $ mkName t )
+                        )
+                        ( foldl'
+                            ( \b a -> AppT
+                                ( AppT
+                                    ( ConT $ mkName "ConsTag" )
+                                    ( ConT $ mkName a )
+                                )
+                                b
+                            )
+                            ( VarT $ mkName "t" )
+                            ts
+                        )
+                    )
+                    ( VarT $ mkName "a" )
+                | (t,ts) <- nub $ concat $ concat $
+                    [   [ case t1 of
+                            (AppT (ConT n) _) ->
+                                [ ( "T"++nameBase n
+                                  , (case pred2strList predType of
+                                    [] -> []
+                                    (s:_) -> if nameBase n==s
+                                        then []
+                                        else [s]
+                                    )++(replicate i $ "T"++nameBase n )
+                                  )
+                                | i <- [0..min (depthSameAppT t1) (depthSameAppT t2)]
+                                ]
+                        | (AppT (AppT c t1) t2) <- cxt
+                        ]
+                    | PredInfo
+                        (AppT (ConT predClass) predType)
+                        (ClassI (ClassD cxt _ _ _ _) _)
+                        _
+                        <- allcxt
+                    ]
+                -- the section above genrates lists of the form
+                -- [("TLogic",[])
+                -- ,("TLogic",["TLogic"])
+                -- ,("TLogic",["TLogic","TLogic"])
+                -- ]
+                ]
             )
             ( AppT
                 ( ConT algName )
@@ -1632,7 +1712,7 @@ mkFAlgebra algName = do
                             ( ConT $ mkName "Free" )
                             ( AppT
                                 ( ConT $ mkName "Sig" )
-                                ( VarT algName' )
+                                ( VarT $ mkName "alg'" )
                             )
                         )
                         ( VarT $ tagName )
@@ -1649,7 +1729,7 @@ mkFAlgebra algName = do
                                 ( ConT $ mkName "Free" )
                                 ( AppT
                                     ( ConT $ mkName "Sig" )
-                                    ( VarT algName' )
+                                    ( VarT $ mkName "alg'" )
                                 )
                             )
                             ( VarT $ tagName )
@@ -1662,12 +1742,13 @@ mkFAlgebra algName = do
                                 ( ConT $ mkName "Free" )
                                 ( AppT
                                     ( ConT $ mkName "Sig" )
-                                    ( VarT algName' )
+                                    ( VarT $ mkName "alg'" )
                                 )
                             )
                             ( AppT
                                 ( AppT
-                                    PromotedConsT
+--                                     PromotedConsT
+                                    ( ConT $ mkName "ConsTag" )
                                     ( ConT $ mkName $ "T"++nameBase atName )
                                 )
                                 ( VarT $ tagName )
@@ -1692,14 +1773,31 @@ mkFAlgebra algName = do
                                         $ map VarE $ genericArgs sigType
                                     )
                                 )
-                            _ -> AppE
-                                ( ConE $ mkName "Free1")
+                            (AppT (ConT n) _) -> AppE
                                 ( AppE
-                                    ( VarE $ mkName "embedSigTag" )
+                                    ( VarE $ mkName "mkFree" )
+                                    ( SigE
+                                        ( ConE $ mkName "Proxy" )
+                                        ( AppT
+                                            ( ConT $ mkName "Proxy" )
+                                            ( ConT $ mkName $ "T"++nameBase n )
+                                        )
+                                    )
+                                )
+                                ( AppE
+                                    ( VarE $ mkName "embedSig" )
                                     ( foldl AppE (ConE $ mkName $ "Sig_"++renameClassMethod sigName)
                                         $ map VarE $ genericArgs sigType
                                     )
                                 )
+--                                 AppE
+--                                     ( ConE $ mkName "Free1")
+--                                     ( AppE
+--                                         ( VarE $ mkName "embedSigTag" )
+--                                         ( foldl AppE (ConE $ mkName $ "Sig_"++renameClassMethod sigName)
+--                                             $ map VarE $ genericArgs sigType
+--                                         )
+--                                     )
                         )
                         []
                     ]
@@ -1708,7 +1806,7 @@ mkFAlgebra algName = do
             )
 
     -- construct the `View alg alg'` instances
-    let instViews = nub $ concat
+    let instViews = nub $ concat $
             [   [ InstanceD
                     Nothing
                     []
@@ -1719,15 +1817,15 @@ mkFAlgebra algName = do
                                     ( ConT $ mkName "View" )
                                     ( ConT predClass )
                                 )
-                                ( predType2tagType
+                                ( pred2tag
                                     PromotedNilT
                                     ( getReturnType sigType )
                                 )
                             )
                             ( ConT algName )
                         )
-                        ( predType2tagType
-                            ( predType2tagType PromotedNilT predType )
+                        ( pred2tag
+                            ( pred2tag PromotedNilT predType )
                             ( getReturnType sigType )
                         )
                     )
@@ -1758,7 +1856,7 @@ mkFAlgebra algName = do
                                                 ( ConT predClass
                                                 )
                                             )
-                                            ( predType2tagType
+                                            ( pred2tag
                                                 PromotedNilT
                                                 ( getReturnType sigType )
                                             )
@@ -1783,11 +1881,11 @@ mkFAlgebra algName = do
                                                     ( ConT parentClass )
                                                 )
                                                 ( case parentType of
-                                                    (VarT _) -> predType2tagType
-                                                        ( predType2tagType PromotedNilT predType )
+                                                    (VarT _) -> pred2tag
+                                                        ( pred2tag PromotedNilT predType )
                                                         ( getReturnType sigType )
-                                                    _ -> typeListInit $ predType2tagType
-                                                        ( predType2tagType PromotedNilT predType )
+                                                    _ -> typeListInit $ pred2tag
+                                                        ( pred2tag PromotedNilT predType )
                                                         ( getReturnType sigType )
                                                 )
                                             )
@@ -1817,7 +1915,7 @@ mkFAlgebra algName = do
                                             ( ConE $ mkName "Proxy" )
                                             ( AppT
                                                 ( ConT $ mkName "Proxy" )
-                                                ( predType2tagType PromotedNilT $ getReturnType sigType )
+                                                ( pred2tag PromotedNilT $ getReturnType sigType )
                                             )
                                         )
                                     )
@@ -1847,11 +1945,11 @@ mkFAlgebra algName = do
                                                 ( AppT
                                                     ( ConT $ mkName "Proxy" )
                                                     ( case parentType of
-                                                        (VarT _) -> predType2tagType
-                                                            ( predType2tagType PromotedNilT predType )
+                                                        (VarT _) -> pred2tag
+                                                            ( pred2tag PromotedNilT predType )
                                                             ( getReturnType sigType )
-                                                        _ -> typeListInit $ predType2tagType
-                                                            ( predType2tagType PromotedNilT predType )
+                                                        _ -> typeListInit $ pred2tag
+                                                            ( pred2tag PromotedNilT predType )
                                                             ( getReturnType sigType )
                                                     )
                                                 )
@@ -1872,22 +1970,31 @@ mkFAlgebra algName = do
                 <- allcxt
             ]
 
-    return $ prereqs ++ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
+    return $ ats ++ instViews ++ {-patSyns ++-} [instFAlgebra,instShow,instShowOverlap,instFree]
 
 predType2str :: Pred -> String
 predType2str (ConT t) = nameBase t
 predType2str (AppT a1 a2) = predType2str a1 ++ "_" ++ predType2str a2
 predType2str _ = ""
 
-predType2tagType :: Pred -> Pred -> TH.Type
-predType2tagType s t = foldr (\a b -> AppT (AppT PromotedConsT a) b) s $ go t
+pred2strList :: Pred -> [String]
+pred2strList (AppT (ConT n) t) = ("T"++nameBase n):pred2strList t
+pred2strList _ = []
+
+pred2tag :: Pred -> Pred -> TH.Type
+pred2tag s t = foldr (\a b -> AppT (AppT PromotedConsT a) b) s $ go t
     where
         go (AppT a1 a2) = go a1 ++ go a2
         go (ConT t) = [ConT $ mkName $ "T"++nameBase t]
         go _ = []
 
+cons2consTag :: TH.Type -> TH.Type
+cons2consTag PromotedConsT = ConT $ mkName "ConsTag"
+cons2consTag (AppT t1 t2) = AppT (cons2consTag t1) (cons2consTag t2)
+cons2consTag t = t
+
 pred2tagSingleton :: Pred -> TH.Type
-pred2tagSingleton t = case predType2tagType PromotedNilT t of
+pred2tagSingleton t = case pred2tag PromotedNilT t of
     (AppT (AppT PromotedConsT t) PromotedNilT) -> t
 
 typeListTail :: TH.Type -> TH.Type
@@ -1919,6 +2026,22 @@ mkProxyE t = SigE
     ( ConE $ mkName "Proxy" )
     ( AppT (ConT $ mkName "Proxy") t)
 
+-- | Converts a type of the form
+--
+-- > Scalar (Scalar (Scalar a)))
+--
+-- into
+--
+-- > TScalar ': TScalar ': TScalar ': t
+type2tag :: TH.Type -> TH.Type
+type2tag (AppT (ConT n) t) = AppT
+    ( AppT
+        ( ConT $ mkName "ConsTag" )
+        ( ConT $ mkName $ "T"++nameBase n )
+    )
+    ( type2tag t )
+type2tag _ = VarT $ mkName "t"
+
 -- | Stores all the information we'll need about a predicate
 data PredInfo = PredInfo
     { predSig    :: Pred
@@ -1927,27 +2050,35 @@ data PredInfo = PredInfo
     }
     deriving (Eq,Show)
 
+depthSameAppT :: TH.Type -> Int
+depthSameAppT (AppT t1 t2) = go 1 t2
+    where
+        go i (AppT t1' t2') = if t1==t1'
+            then go (i+1) t2'
+            else i
+        go i _ = i
+depthSameAppT _ = 0
+
 -- | Given a predicate that represents a class/tag combination,
 -- recursively list all super predicates
 superPredicates :: Pred -> Q [PredInfo]
-superPredicates rootPred@(AppT (ConT predClass) _) = do
+superPredicates (ForallT _ _ t) = superPredicates t
+superPredicates rootPred@(AppT (ConT predClass) _) = {-trace "" $ trace "superPred" $-} do
     qinfo <- reify predClass
     go [] $ PredInfo rootPred qinfo Nothing
     where
 
+        -- FIXME
         stopRecursion :: TH.Type -> Q Bool
-        stopRecursion t@(AppT _ (AppT (ConT c1) (AppT (ConT c2) _))) = do
-            idemp <- isIdempotent c1
-            return $ idemp && nameBase c1==nameBase c2
+        stopRecursion (AppT _ (AppT (ConT c) t)) = do
+            idemp <- isIdempotent c
+--             return $ idemp && depthSameAppT (AppT (ConT c) t) > 2
+            return $ depthSameAppT (AppT (ConT c) t) > 2
         stopRecursion _ = return False
-
-        depthAppT :: TH.Type -> Int
-        depthAppT (AppT _ t) = 1+depthAppT t
-        depthAppT _ = 0
 
         go :: [PredInfo] -> PredInfo -> Q [PredInfo]
         go prevCxt predInfo@(PredInfo (AppT (ConT predClass) predType) _ _) = do
-            trace ("predClass="++nameBase predClass++"; predType="++show predType) $ return ()
+--             trace ("predClass="++nameBase predClass++"; predType="++show predType) $ return ()
             stop <- stopRecursion (predSig predInfo)
             if stop
                 then return prevCxt
@@ -1968,7 +2099,7 @@ superPredicates rootPred@(AppT (ConT predClass) _) = do
                     return
                         $ nub
                         $ predInfo { predReify=qinfo }:prevCxt++concat newCxt
-        go prevCxt _ = trace "basecase_go" $ return prevCxt
+        go prevCxt _ = return prevCxt
 
         -- When the go function recurses,
         -- we need to remember what layer of tags we've already seen.
@@ -1979,4 +2110,4 @@ superPredicates rootPred@(AppT (ConT predClass) _) = do
                 go (AppT t1 t2) = AppT t1 $ go t2
                 go (VarT t) = predType'
                 go t = t
-        subPred p t = trace "basecase" $ t -- FIXME?
+        subPred p t = t -- FIXME?
