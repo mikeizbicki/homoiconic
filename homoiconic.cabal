@@ -1,6 +1,6 @@
 
 name:                homoiconic
-version:             0.1.0.0
+version:             0.1.0.1
 synopsis:            Constructs FAlgebras from typeclasses, making Haskell functions homoiconic
 description:
     This library lets you automatically create FAlgebras for many type classes. From these FAlgebras and the free monad, we can generate abstract syntax trees for the type class. This lets us make many functions homoiconic.
@@ -32,6 +32,7 @@ library
         Homoiconic.Heterogeneous.TH
         Homoiconic.Constrained.TH
         Homoiconic.Common.TH
+        Homoiconic.Common.Tags
 
     default-extensions:
         UndecidableSuperClasses,
