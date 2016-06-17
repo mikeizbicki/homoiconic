@@ -273,7 +273,6 @@ mkFAlgebra algName = do
 
     return prereqs
 
-
 -- | Generates the FAlgebra instance for the specified name without recusively generating dependencies
 mkFAlgebraNoRec :: Name -> Q [Dec]
 mkFAlgebraNoRec algName = do
@@ -287,12 +286,7 @@ mkFAlgebraNoRec algName = do
             ++", which is not a class of kind `Type -> Constraint`"
 
     -- remove functions from decsraw that we can't handle
-    let go x = case x of
-            SigD _ sigType -> if isConcrete $ getReturnType sigType
-                then False
-                else True
-            _ -> True
-    let decs = filter go rawdecs
+    let decs = filter isHeterogeneousFunction rawdecs
 
     -- common variables we'll need later
     let varName = mkName "a"
@@ -895,7 +889,7 @@ mkFAlgebraNoRec algName = do
                                 ]
                         | t <- getReturnType sigType:getArgs sigType
                         ]
-                    | SigD sigName sigType <- decs
+                    | SigD sigName sigType <- filter isHeterogeneousFunction decs
                     ]
                 | PredInfo
                     (AppT (ConT predClass) predType)
@@ -1087,7 +1081,7 @@ mkFAlgebraNoRec algName = do
                                 ( pred2tag (VarT tagName) predType )
                                 ( getReturnType sigType )
                             )
-                        | SigD _ sigType <- decs
+                        | SigD _ sigType <- filter isHeterogeneousFunction decs
                         ]
                     | PredInfo
                         (AppT (ConT predClass) predType)
@@ -1267,7 +1261,7 @@ mkFAlgebraNoRec algName = do
             )
 
     -- construct the `View alg alg'` instances
-    let instViews = nub $ concat $
+    let instViews = nubBy (\ (InstanceD _ _ i1 _) (InstanceD _ _ i2 _) -> i1==i2) $ concat $
             [   [ InstanceD
                     Nothing
                     []
@@ -1422,7 +1416,8 @@ mkFAlgebraNoRec algName = do
                                 []
                             ]
                     ]
-                | SigD _ sigType <- SigD undefined (VarT varName):decs
+                | SigD _ sigType <-
+                    filter isHeterogeneousFunction $ SigD undefined (VarT varName):decs
                 ]
             | PredInfo
                 (AppT (ConT predClass) predType)
@@ -1431,7 +1426,7 @@ mkFAlgebraNoRec algName = do
                 <- allcxt
             ]
 
-    return $ ats ++ instViews ++ {-patSyns ++-} [instFAlgebra,instShow,instShowOverlap,instFree]
+    return $ nub $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
 predType2str :: Pred -> String
 predType2str (ConT t) = nameBase t
@@ -1519,6 +1514,13 @@ depthSameAppT (AppT t1 t2) = go 1 t2
             else i
         go i _ = i
 depthSameAppT _ = 0
+
+isHeterogeneousFunction :: Dec -> Bool
+isHeterogeneousFunction x = case x of
+    SigD _ sigType -> if isConcrete $ getReturnType sigType
+        then False
+        else True
+    _ -> True
 
 isEqualityCnst :: TH.Type -> Bool
 isEqualityCnst (AppT (AppT (ConT n) _) _) = show n == "Data.Type.Equality.~"

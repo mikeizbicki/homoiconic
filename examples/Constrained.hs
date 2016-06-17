@@ -15,7 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GADTs #-}
 
-import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound)
+import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound,fromInteger)
 import qualified Prelude as P
 
 import Homoiconic.Constrained
@@ -26,6 +26,8 @@ class Topology a => Poset a where
     inf :: a -> a -> a
     (<=) :: a -> a -> Logic a
     (<=) a1 a2 = inf a1 a2 == a1
+
+    compare :: a -> a -> Maybe Ordering
 
 #define mkPoset(x) \
 instance Poset x where inf = P.min
@@ -93,6 +95,7 @@ instance (Semigroup a, Semigroup b) => Semigroup (a,b) where
 
 class Semigroup a => Monoid a where
     zero :: a
+    fromInteger :: Int -> a
 
 instance Monoid Int where zero = 0
 instance (Monoid a, Monoid b) => Monoid (a,b) where
