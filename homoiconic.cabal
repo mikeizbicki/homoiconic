@@ -20,10 +20,12 @@ library
     exposed-modules:
         Homogeneous.FAlgebra
         Heterogeneous.FAlgebra
+        Constrained.FAlgebra
 
     other-modules:
         Homogeneous.TH
         Heterogeneous.TH
+        Constrained.TH
         Common.TH
 
     extensions:
