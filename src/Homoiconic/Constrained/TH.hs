@@ -1529,19 +1529,26 @@ isEqualityCnst (AppT (AppT EqualityT _) _) = True
 isEqualityCnst _ = False
 
 subTypeFamilies :: Cxt -> Q Cxt
-subTypeFamilies [] = return []
-subTypeFamilies ((x@(AppT (ConT n) t)):xs) = do
-    qinfo <- reify n
-    case qinfo of
-        TyConI (TySynD _ _ t') -> do
-            xs' <- subTypeFamilies xs
-            return $ map (subAllVars t) (tuple2list t') ++ xs'
-        _ -> do
-            xs' <- subTypeFamilies xs
+subTypeFamilies cxt = do
+    cxt1 <- go cxt
+    cxt2 <- go cxt1
+    if cxt1==cxt2
+        then return cxt1
+        else go cxt2
+    where
+        go [] = return []
+        go ((x@(AppT (ConT n) t)):xs) = do
+            qinfo <- reify n
+            case qinfo of
+                TyConI (TySynD _ _ t') -> do
+                    xs' <- go xs
+                    return $ map (subAllVars t) (tuple2list t') ++ xs'
+                _ -> do
+                    xs' <- go xs
+                    return $ x:xs'
+        go (x:xs) = do
+            xs' <- go xs
             return $ x:xs'
-subTypeFamilies (x:xs) = do
-    xs' <- subTypeFamilies xs
-    return $ x:xs'
 
 tuple2list :: Pred -> Cxt
 tuple2list t@(AppT t1 t2) = if go t1
