@@ -1247,14 +1247,9 @@ mkFAlgebraNoRec algName = do
                                         $ map VarE $ genericArgs sigType
                                     )
                                 )
---                                 AppE
---                                     ( ConE $ mkName "Free1")
---                                     ( AppE
---                                         ( VarE $ mkName "embedSigTag" )
---                                         ( foldl AppE (ConE $ mkName $ "Sig_"++renameClassMethod sigName)
---                                             $ map VarE $ genericArgs sigType
---                                         )
---                                     )
+                            _ -> AppE
+                                ( VarE $ mkName "error" )
+                                ( LitE $ StringL $ nameBase sigName++" called on AST, but return type unsupported; this should never happen" )
                         )
                         []
                     ]
@@ -1517,11 +1512,15 @@ depthSameAppT (AppT t1 t2) = go 1 t2
         go i _ = i
 depthSameAppT _ = 0
 
+-- FIXME:
+-- This is poor approximation of the true definition
 isHeterogeneousFunction :: Dec -> Bool
 isHeterogeneousFunction x = case x of
     SigD _ sigType -> if isConcrete $ getReturnType sigType
         then False
-        else True
+        else case getReturnType sigType of
+            (AppT (VarT _) _) -> False
+            _ -> True
     _ -> True
 
 isEqualityCnst :: TH.Type -> Bool
