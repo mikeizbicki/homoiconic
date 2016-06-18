@@ -10,11 +10,13 @@
 
 -- these options are required for constrained FAlgebras
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
 
 import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound,fromInteger)
 import qualified Prelude as P
@@ -25,6 +27,7 @@ import Homoiconic.Constrained
 
 class Topology a => Poset a where
     inf :: a -> a -> a
+
     (<=) :: a -> a -> Logic a
     (<=) a1 a2 = inf a1 a2 == a1
 
@@ -60,6 +63,7 @@ instance (LowerBounded a, LowerBounded b) => LowerBounded (a,b) where
 
 ----------------------------------------
 
+
 type ValidLogic a = Logic (Logic (Logic a)) ~ Logic (Logic a)
 
 class (LowerBounded (Logic a), ValidLogic a) => Topology a where
@@ -70,6 +74,7 @@ class (LowerBounded (Logic a), ValidLogic a) => Topology a where
 instance Topology x where \
     type Logic x = Bool; \
     (==) = (P.==)
+-- type instance Logic x = Bool; \
 
 mkTopology(Float)
 mkTopology(Double)
@@ -79,6 +84,7 @@ mkTopology(Int)
 mkTopology(Bool)
 mkTopology(Char)
 
+-- type instance Logic (a,b) = (Logic a, Logic b)
 instance (Topology a, Topology b) => Topology (a,b) where
     type Logic (a,b) = (Logic a, Logic b)
     (==) (a1,b1) (a2,b2) = (a1==a2,b1==b2)
@@ -104,26 +110,23 @@ instance (Monoid a, Monoid b) => Monoid (a,b) where
 
 ----------------------------------------
 
+type family Scalar a
 type ValidScalar a = (Module (Scalar a), Scalar (Scalar a)~Scalar a)
+
 class (Monoid a, ValidScalar a) => Module a where
-    type Scalar a
+--     type Scalar a
     (.*) :: Scalar a -> a -> a
 
--- type instance Scalar Bool = Bool
-instance Semigroup Bool
-instance Monoid Bool
-instance Module Bool where
-    type Scalar Bool = Bool
 
--- type instance Scalar Int = Int
--- type instance Scalar (a,b) = Scalar b
+type instance Scalar Int = Int
+type instance Scalar (a,b) = Scalar b
 
 instance Module Int where
-    type Scalar Int = Int
+--     type Scalar Int = Int
     (.*) = (P.*)
 
 instance (Module a, Module a) => Module (a,a) where
-    type Scalar (a,a) = Scalar a
+--     type Scalar (a,a) = Scalar a
     s.*(a1,b1) = (s.*a1,s.*b1)
 
 ----------------------------------------
@@ -137,10 +140,6 @@ instance (Semigroup (Scalar a), Hilbert a) => Hilbert (a,a) where
 
 ----------------------------------------
 
-instance Hilbert Bool
-instance Floobert Bool where
-    type Floo Bool = Bool
-
 class (Hilbert a, Hilbert (Floo a)) => Floobert a where
     type Floo a
     floo :: Floo a -> a
@@ -152,6 +151,18 @@ instance (Semigroup (Scalar a), Hilbert a, Floobert a) => Floobert (a,a) where
 
 --------------------------------------------------------------------------------
 
+type instance Scalar Bool = Bool
+instance Semigroup Bool
+instance Monoid Bool
+instance Module Bool where
+--     type Scalar Bool = Bool
+instance Hilbert Bool
+instance Floobert Bool where
+    type Floo Bool = Bool
+
+--------------------------------------------------------------------------------
+
+mkTagFromCnst ''Scalar [t| forall a. ValidScalar a |]
 mkFAlgebra ''Floobert
 
 type instance FreeConstraints t a

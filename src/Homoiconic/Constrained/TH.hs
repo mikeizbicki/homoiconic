@@ -21,23 +21,73 @@ import Unsafe.Coerce
 
 --------------------------------------------------------------------------------
 
--- |
+-- | Generates an instance of the form
 --
--- FIXME:
--- Currently, only "Scalar" is idempotent and nothing else is.
-isIdempotent :: Name -> Q Bool
-isIdempotent n = return $ if nameBase n=="Scalar" || nameBase n =="Logic"
-    then True
-    else False
+-- > atName (Free (Sig alg) t a) = Free (Sig alg) (tagName : t) a
+tagFreeInstance :: Name -> Dec
+tagFreeInstance atName = TySynInstD
+    atName
+    ( TySynEqn
+        [ AppT
+            ( AppT
+                ( AppT
+                    ( ConT $ mkName "Free" )
+                    ( AppT
+                        ( ConT $ mkName "Sig" )
+                        ( VarT $ mkName "alg" )
+                    )
+                )
+                ( VarT $ mkName "t" )
+            )
+            ( VarT $ mkName "a" )
+        ]
+        ( AppT
+            ( AppT
+                ( AppT
+                    ( ConT $ mkName "Free" )
+                    ( AppT
+                        ( ConT $ mkName "Sig" )
+                        ( VarT $ mkName "alg" )
+                    )
+                )
+                ( AppT
+                    ( AppT
+                        ( ConT $ mkName "ConsTag" )
+                        ( ConT $ mkName $ "T"++nameBase atName )
+                    )
+                    ( VarT $ mkName "t" )
+                )
+            )
+            ( VarT $ mkName "a" )
+        )
+    )
 
 -- | Constructs the needed declarations for a type family assuming no constraints on the type family
 mkTag :: Name -> Q [Dec]
-mkTag = mkTagFromCxt []
+mkTag atName = do
+    ret <- mkTagFromCxt atName []
+    return $ tagFreeInstance atName:ret
+
+-- | This functions is designed to be called on non-associated type families only.
+-- The second argument lists the constraints that the family must obey.
+-- For example:
+--
+-- > mkTagFromCnst ''Scalar [t| forall a. Scalar (Scalar a) ~ Scalar a |]
+mkTagFromCnst :: Name -> Q Pred -> Q [Dec]
+mkTagFromCnst atName qpred = do
+    pred <- qpred
+    ret <- case pred of
+        ForallT _ _ t -> mkTagFromCnst atName $ return t
+        (AppT (AppT EqualityT t1) t2) -> mkTagFromCnst atName $ return (AppT (AppT (ConT (mkName "Data.Type.Equality.~")) t1) t2)
+        t -> mkTagFromCxt atName [t]
+
+    return $ tagFreeInstance atName:ret
 
 -- | Constructs the declarations for a type family that is constrainted by some context.
 -- Currently, the only supported constraints are idempocency constraints.
-mkTagFromCxt :: Cxt -> Name -> Q [Dec]
-mkTagFromCxt cxt atName = do
+mkTagFromCxt :: Name -> Cxt -> Q [Dec]
+mkTagFromCxt atName cxt = do
+
     -- validate input
     qinfo <- reify atName
     case qinfo of
@@ -301,7 +351,7 @@ mkFAlgebraNoRec algName = do
     -- Should this construct non-associated types that happen to be used as well?
     -- If so, should we prevent duplicate instances from being created?
     ats <- fmap concat $ sequence
-        [ mkTagFromCxt cxt atName
+        [ mkTagFromCxt atName cxt
         | OpenTypeFamilyD (TypeFamilyHead atName _ _ _) <- decs
         ]
 
@@ -1146,6 +1196,7 @@ mkFAlgebraNoRec algName = do
                                   )
                                 | i <- [0..min (depthSameAppT t1) (depthSameAppT t2)]
                                 ]
+                            _ -> []
                         | (AppT (AppT c t1) t2) <- cxt
                         ]
                     | PredInfo
@@ -1204,7 +1255,6 @@ mkFAlgebraNoRec algName = do
                             )
                             ( AppT
                                 ( AppT
---                                     PromotedConsT
                                     ( ConT $ mkName "ConsTag" )
                                     ( ConT $ mkName $ "T"++nameBase atName )
                                 )
@@ -1558,13 +1608,14 @@ tuple2list t@(AppT t1 t2) = if go t1
             go (TupleT _) = True
             go (AppT t _) = go t
             go _ = False
+tuple2list (TupleT _) = []
 tuple2list t = [t]
 
 -- | Given a predicate that represents a class/tag combination,
 -- recursively list all super predicates
 superPredicates :: Pred -> Q [PredInfo]
 superPredicates (ForallT _ _ t) = superPredicates t
-superPredicates rootPred@(AppT (ConT predClass) _) = {-trace "" $ trace "superPred" $-} do
+superPredicates rootPred@(AppT (ConT predClass) _) = do
     qinfo <- reify predClass
     go [] $ PredInfo rootPred qinfo Nothing
     where

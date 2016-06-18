@@ -30,7 +30,7 @@ module Homoiconic.Constrained
     -- * Template Haskell
     , mkFAlgebra
     , mkTag
-    , mkTagFromCxt
+    , mkTagFromCnst
 
     -- ** Helper functions
     , unsafeExtractSigTag0
