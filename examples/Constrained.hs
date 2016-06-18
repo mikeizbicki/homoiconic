@@ -3,6 +3,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-missing-methods #-}
@@ -59,9 +60,9 @@ instance (LowerBounded a, LowerBounded b) => LowerBounded (a,b) where
 
 ----------------------------------------
 
--- type ValidLogic a = Logic (Logic (Logic a)) ~ Logic (Logic a)
+type ValidLogic a = Logic (Logic (Logic a)) ~ Logic (Logic a)
 
-class (LowerBounded (Logic a), Logic (Logic (Logic a))~Logic (Logic a)) => Topology a where
+class (LowerBounded (Logic a), ValidLogic a) => Topology a where
     type Logic a
     (==) :: a -> a -> Logic a
 
@@ -103,7 +104,8 @@ instance (Monoid a, Monoid b) => Monoid (a,b) where
 
 ----------------------------------------
 
-class (Monoid a, Module (Scalar a), Scalar (Scalar a)~Scalar a) => Module a where
+type ValidScalar a = (Module (Scalar a), Scalar (Scalar a)~Scalar a)
+class (Monoid a, ValidScalar a) => Module a where
     type Scalar a
     (.*) :: Scalar a -> a -> a
 

@@ -1536,13 +1536,23 @@ subTypeFamilies ((x@(AppT (ConT n) t)):xs) = do
     case qinfo of
         TyConI (TySynD _ _ t') -> do
             xs' <- subTypeFamilies xs
-            return $ subAllVars t t' : xs'
+            return $ map (subAllVars t) (tuple2list t') ++ xs'
         _ -> do
             xs' <- subTypeFamilies xs
             return $ x:xs'
 subTypeFamilies (x:xs) = do
     xs' <- subTypeFamilies xs
     return $ x:xs'
+
+tuple2list :: Pred -> Cxt
+tuple2list t@(AppT t1 t2) = if go t1
+    then t2:tuple2list t1
+    else [t]
+        where
+            go (TupleT _) = True
+            go (AppT t _) = go t
+            go _ = False
+tuple2list t = [t]
 
 -- | Given a predicate that represents a class/tag combination,
 -- recursively list all super predicates
