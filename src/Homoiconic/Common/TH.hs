@@ -12,18 +12,13 @@ import Data.Typeable
 import Data.Kind
 import GHC.Exts hiding (IsList(..))
 
--- import Test.Tasty
--- import Test.Tasty.Ingredients.Basic
--- import Test.Tasty.Options
--- import Test.Tasty.Runners
--- -- import qualified Test.Tasty.SmallCheck as SC
--- import qualified Test.Tasty.QuickCheck as QC
--- import Test.QuickCheck hiding (Testable)
-
 import Language.Haskell.TH hiding (Type)
 import qualified Language.Haskell.TH as TH
 
 import Debug.Trace
+
+--------------------------------------------------------------------------------
+
 renameClassMethod :: Name -> String
 renameClassMethod n = concatMap go $ nameBase n
     where
@@ -44,11 +39,23 @@ isVarT :: TH.Type -> Bool
 isVarT (VarT _) = True
 isVarT _        = False
 
+-- FIXME:
+-- This really needs to be in the Q monad to properly handle the AppT case.
+-- Right now, it returns incorrect results for any concrete type constructor being applied to anything.
 isConcrete :: TH.Type -> Bool
-isConcrete (VarT _) = False
-isConcrete (ConT _) = True
-isConcrete (AppT a1 a2) = isConcrete a1 && isConcrete a2
-isConcrete t = error ("isConcrete: t="++show t)
+isConcrete t = go t
+    where
+        go (VarT _) = False
+        go (ConT _) = True
+        go (ListT) = True
+        go (AppT ListT _) = True
+        go (AppT a1 a2) = go a1 && go a2
+        go _ = error ("go: t="++show t)
+
+isList :: TH.Type -> Bool
+isList ListT = True
+isList (AppT t _) = isList t
+isList _ = False
 
 -- | Given a type that stores a function:
 -- return a list of the arguments to that function,

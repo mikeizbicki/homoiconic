@@ -53,7 +53,7 @@ tagFreeInstance atName = TySynInstD
                 ( AppT
                     ( AppT
                         ( ConT $ mkName "ConsTag" )
-                        ( ConT $ mkName $ "T"++nameBase atName )
+                        ( ConT $ mkName $ "T"++renameClassMethod atName )
                     )
                     ( VarT $ mkName "t" )
                 )
@@ -97,7 +97,7 @@ mkTagFromCxt atName cxt = do
             ++", which is not an open type family of kind `Type -> Type`"
 
     -- common names
-    let tagName = mkName $ "T"++nameBase atName
+    let tagName = mkName $ "T"++renameClassMethod atName
 
     --------------------
     -- all tags need these declarations
@@ -203,7 +203,7 @@ mkTagFromCxt atName cxt = do
                     ( TySynEqn
                         [ ConT tagName , VarT $ mkName "ts" ]
                         ( AppT
-                            ( ConT $ mkName $ "ConsTag_"++nameBase tagName )
+                            ( ConT $ mkName $ "ConsTag_"++renameClassMethod tagName )
                             ( VarT $ mkName "ts" )
                         )
                     )
@@ -211,7 +211,7 @@ mkTagFromCxt atName cxt = do
                 -- create the ConsTag_algName closed family
                 , ClosedTypeFamilyD
                     ( TypeFamilyHead
-                        ( mkName $ "ConsTag_"++nameBase tagName )
+                        ( mkName $ "ConsTag_"++renameClassMethod tagName )
                         [ PlainTV $ mkName "ts" ]
                         NoSig
                         Nothing
@@ -356,7 +356,7 @@ mkFAlgebraNoRec algName = do
         ]
 
     -- create a constructor for each member function
-    let consFunc =
+    let consFunc = nub $
             [ GadtC
                 [ mkName $ "Sig_" ++ renameClassMethod sigName ]
                 ( map
@@ -377,10 +377,10 @@ mkFAlgebraNoRec algName = do
             ]
 
     -- create a constructor for each predicate class to hold their signatures
-    let consPred =
+    let consPred = nub $
             [ GadtC
-                [ mkName $ "Sig_"++nameBase algName
-                            ++"_"++nameBase predClass
+                [ mkName $ "Sig_"++renameClassMethod algName
+                            ++"_"++renameClassMethod predClass
                             ++"_"++predType2str predType
                 ]
                 [ ( Bang NoSourceUnpackedness SourceStrict
@@ -436,42 +436,53 @@ mkFAlgebraNoRec algName = do
                 ( mkName "mapRun" )
                 (
                     -- for each function constructor
-                    [ Clause
-                        [ VarP $ mkName "f"
-                        , ConP
-                            ( mkName $ "Sig_" ++ renameClassMethod sigName )
-                            ( map VarP $ genericArgs sigType )
-                        ]
-                        ( NormalB $ foldl
-                            AppE
-                            ( ConE $ mkName $ "Sig_"++renameClassMethod sigName )
-                            [ if not $ isConcrete argType
-                                then AppE
-                                    ( VarE $ mkName "f" )
-                                    ( VarE $ argName )
-                                else VarE argName
-                            | (argName,argType) <- zip
-                                (genericArgs sigType)
-                                (getArgs sigType)
+                    (
+                            [ Clause
+                                [ VarP $ mkName "f"
+                                , ConP
+                                    ( mkName $ "Sig_" ++ renameClassMethod sigName )
+                                    ( map VarP $ genericArgs sigType )
+                                ]
+                                ( NormalB $ foldl
+                                    AppE
+                                    ( ConE $ mkName $ "Sig_"++renameClassMethod sigName )
+                                    -- FIXME:
+                                    -- The code below handles lists specially,
+                                    -- but it should work for any functor.
+                                    [ if isList argType
+                                        then AppE
+                                            ( AppE
+                                                ( VarE $ mkName "map" )
+                                                ( VarE $ mkName "f" )
+                                            )
+                                            ( VarE $ argName )
+                                        else if not $ isConcrete argType
+                                            then AppE
+                                                ( VarE $ mkName "f" )
+                                                ( VarE $ argName )
+                                            else VarE argName
+                                    | (argName,argType) <- zip
+                                        (genericArgs sigType)
+                                        (getArgs sigType)
+                                    ]
+                                )
+                                []
+                                | SigD sigName sigType <- decs
                             ]
-                        )
-                        []
-                        | SigD sigName sigType <- decs
-                    ]
-                    ++
+                    )++
                     -- for each predicate constructor
                     [ Clause
                         [ VarP $ mkName "f"
-                        , ConP ( mkName $ "Sig_"++nameBase algName
-                                           ++"_"++nameBase predClass
+                        , ConP ( mkName $ "Sig_"++renameClassMethod algName
+                                           ++"_"++renameClassMethod predClass
                                            ++"_"++predType2str predType
                                )
                                [ VarP $ mkName "s" ]
                         ]
                         ( NormalB
                             ( AppE
-                                ( ConE $ mkName $ "Sig_"++nameBase algName
-                                                   ++"_"++nameBase predClass
+                                ( ConE $ mkName $ "Sig_"++renameClassMethod algName
+                                                   ++"_"++renameClassMethod predClass
                                                    ++"_"++predType2str predType
                                 )
                                 ( AppE
@@ -492,7 +503,7 @@ mkFAlgebraNoRec algName = do
                         [ VarP $ mkName "f", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "mapRun ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "mapRun ("++renameClassMethod algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -529,8 +540,8 @@ mkFAlgebraNoRec algName = do
                             )
                         , SigP
                             ( ConP
-                                ( mkName $ "Sig_"++nameBase algName
-                                            ++"_"++nameBase predClass
+                                ( mkName $ "Sig_"++renameClassMethod algName
+                                            ++"_"++renameClassMethod predClass
                                             ++"_"++predType2str predType
                                 )
                                 [ VarP $ mkName $ "s" ]
@@ -590,7 +601,7 @@ mkFAlgebraNoRec algName = do
                         [ VarP $ mkName "p", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "runSig1 ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "runSig1 ("++renameClassMethod algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -626,8 +637,8 @@ mkFAlgebraNoRec algName = do
                                 ( VarT varName )
                             )
                         , ConP
-                            ( mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
+                            ( mkName $ "Sig_"++renameClassMethod algName
+                                        ++"_"++renameClassMethod predClass
                                         ++"_"++predType2str predType
                             )
                             [ VarP $ mkName $ "s" ]
@@ -671,7 +682,7 @@ mkFAlgebraNoRec algName = do
                         [ VarP $ mkName "p", VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "runSig0 ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "runSig0 ("++renameClassMethod algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -1007,8 +1018,8 @@ mkFAlgebraNoRec algName = do
                     -- show all the class's predicates
                     [ Clause
                         [ ConP
-                            ( mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase predClass
+                            ( mkName $ "Sig_"++renameClassMethod algName
+                                        ++"_"++renameClassMethod predClass
                                         ++"_"++predType2str predType
                             )
                             [ VarP $ mkName "s" ]
@@ -1027,7 +1038,7 @@ mkFAlgebraNoRec algName = do
                             ( mkName $ "Sig_" ++ renameClassMethod sigName )
                             ( map VarP $ genericArgs sigType )
                         ]
-                        ( if isOperator (nameBase sigName)
+                        ( if isOperator (renameClassMethod sigName)
 
                             -- if we're an operator, then there's exactly two arguments named a0, a1;
                             -- display the operator infix
@@ -1042,7 +1053,7 @@ mkFAlgebraNoRec algName = do
                                                 ( VarE $ mkName "a0" )
                                             )
                                         )
-                                        ( LitE $ StringL $ nameBase sigName )
+                                        ( LitE $ StringL $ renameClassMethod sigName )
                                     )
                                 )
                                 ( AppE
@@ -1069,7 +1080,7 @@ mkFAlgebraNoRec algName = do
                                         a
                                     )
                                 )
-                                ( LitE $ StringL $ nameBase sigName )
+                                ( LitE $ StringL $ renameClassMethod sigName )
                                 ( map VarE $ genericArgs sigType )
                         )
                         []
@@ -1081,7 +1092,7 @@ mkFAlgebraNoRec algName = do
                         [ VarP $ mkName "s" ]
                         ( NormalB $ AppE
                             ( VarE $ mkName "error" )
-                            ( LitE $ StringL $ "show ("++nameBase algName++"): this should never happen" )
+                            ( LitE $ StringL $ "show ("++renameClassMethod algName++"): this should never happen" )
                         )
                         []
                     ]
@@ -1186,13 +1197,13 @@ mkFAlgebraNoRec algName = do
                 | (t,ts) <- nub $ concat $ concat $
                     [   [ case t1 of
                             (AppT (ConT n) _) ->
-                                [ ( "T"++nameBase n
+                                [ ( "T"++renameClassMethod n
                                   , (case pred2strList predType of
                                     [] -> []
-                                    (s:_) -> if nameBase n==s
+                                    (s:_) -> if renameClassMethod n==s
                                         then []
                                         else [s]
-                                    )++(replicate i $ "T"++nameBase n )
+                                    )++(replicate i $ "T"++renameClassMethod n )
                                   )
                                 | i <- [0..min (depthSameAppT t1) (depthSameAppT t2)]
                                 ]
@@ -1256,7 +1267,7 @@ mkFAlgebraNoRec algName = do
                             ( AppT
                                 ( AppT
                                     ( ConT $ mkName "ConsTag" )
-                                    ( ConT $ mkName $ "T"++nameBase atName )
+                                    ( ConT $ mkName $ "T"++renameClassMethod atName )
                                 )
                                 ( VarT $ tagName )
                             )
@@ -1287,7 +1298,7 @@ mkFAlgebraNoRec algName = do
                                         ( ConE $ mkName "Proxy" )
                                         ( AppT
                                             ( ConT $ mkName "Proxy" )
-                                            ( ConT $ mkName $ "T"++nameBase n )
+                                            ( ConT $ mkName $ "T"++renameClassMethod n )
                                         )
                                     )
                                 )
@@ -1299,7 +1310,7 @@ mkFAlgebraNoRec algName = do
                                 )
                             _ -> AppE
                                 ( VarE $ mkName "error" )
-                                ( LitE $ StringL $ nameBase sigName++" called on AST, but return type unsupported; this should never happen" )
+                                ( LitE $ StringL $ renameClassMethod sigName++" called on AST, but return type unsupported; this should never happen" )
                         )
                         []
                     ]
@@ -1338,8 +1349,8 @@ mkFAlgebraNoRec algName = do
                             ( mkName "embedSig" )
                             [ Clause
                                 []
-                                ( NormalB $ ConE $ mkName $ "Sig_"++nameBase algName
-                                            ++"_"++nameBase predClass
+                                ( NormalB $ ConE $ mkName $ "Sig_"++renameClassMethod algName
+                                            ++"_"++renameClassMethod predClass
                                             ++"_"++predType2str predType
                                 )
                                 []
@@ -1367,8 +1378,8 @@ mkFAlgebraNoRec algName = do
                                     )
                                 ]
                                 ( NormalB $ AppE
-                                    ( ConE $ mkName $ "Sig_"++nameBase algName
-                                        ++"_"++nameBase parentClass
+                                    ( ConE $ mkName $ "Sig_"++renameClassMethod algName
+                                        ++"_"++renameClassMethod parentClass
                                         ++"_"++predType2str parentType
                                     )
                                     ( SigE
@@ -1404,8 +1415,8 @@ mkFAlgebraNoRec algName = do
                             ( mkName "unsafeExtractSig" )
                             [ Clause
                                 [ ConP
-                                    ( mkName $ "Sig_"++nameBase algName
-                                                ++"_"++nameBase predClass
+                                    ( mkName $ "Sig_"++renameClassMethod algName
+                                                ++"_"++renameClassMethod predClass
                                                 ++"_"++predType2str predType
                                     )
                                     [ VarP $ mkName "s" ]
@@ -1431,8 +1442,8 @@ mkFAlgebraNoRec algName = do
                             ( mkName "unsafeExtractSig" )
                             [ Clause
                                 [ ConP
-                                    ( mkName $ "Sig_"++nameBase algName
-                                                ++"_"++nameBase parentClass
+                                    ( mkName $ "Sig_"++renameClassMethod algName
+                                                ++"_"++renameClassMethod parentClass
                                                 ++"_"++predType2str parentType
                                     )
                                     [ VarP $ mkName "s" ]
@@ -1473,22 +1484,24 @@ mkFAlgebraNoRec algName = do
                 <- allcxt
             ]
 
-    return $ nub $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
+    if nameBase algName=="Constructible"
+        then return $ nub $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
+        else return $ nub $ ats ++ instViews ++ patSyns ++ [instFAlgebra,instShow,instShowOverlap,instFree]
 
 predType2str :: Pred -> String
-predType2str (ConT t) = nameBase t
+predType2str (ConT t) = renameClassMethod t
 predType2str (AppT a1 a2) = predType2str a1 ++ "_" ++ predType2str a2
 predType2str _ = ""
 
 pred2strList :: Pred -> [String]
-pred2strList (AppT (ConT n) t) = ("T"++nameBase n):pred2strList t
+pred2strList (AppT (ConT n) t) = ("T"++renameClassMethod n):pred2strList t
 pred2strList _ = []
 
 pred2tag :: Pred -> Pred -> TH.Type
 pred2tag s t = foldr (\a b -> AppT (AppT PromotedConsT a) b) s $ go t
     where
         go (AppT a1 a2) = go a1 ++ go a2
-        go (ConT t) = [ConT $ mkName $ "T"++nameBase t]
+        go (ConT t) = [ConT $ mkName $ "T"++renameClassMethod t]
         go _ = []
 
 cons2consTag :: TH.Type -> TH.Type
@@ -1520,7 +1533,7 @@ subAllVars e = go
 renameVars :: TH.Type -> TH.Type
 renameVars = go
     where
-        go (VarT n) = VarT $ mkName $ nameBase n
+        go (VarT n) = VarT $ mkName $ renameClassMethod n
         go (AppT t1 t2) = AppT (go t1) (go t2)
         go t = t
 
@@ -1540,7 +1553,7 @@ type2tag :: TH.Type -> TH.Type
 type2tag (AppT (ConT n) t) = AppT
     ( AppT
         ( ConT $ mkName "ConsTag" )
-        ( ConT $ mkName $ "T"++nameBase n )
+        ( ConT $ mkName $ "T"++renameClassMethod n )
     )
     ( type2tag t )
 type2tag _ = VarT $ mkName "t"
