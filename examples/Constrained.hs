@@ -18,7 +18,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
 
-import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound,fromInteger,elem)
+import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound,fromInteger,elem, Semigroup(..))
 import qualified Prelude as P
 
 import Homoiconic.Constrained

@@ -11,8 +11,8 @@
 
 import Homoiconic.Homogeneous
 
-import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound)
-import qualified Prelude as P
+import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound, Semigroup(..))
+import qualified Prelude as P hiding (Semigroup, Monoid)
 
 --------------------------------------------------------------------------------
 

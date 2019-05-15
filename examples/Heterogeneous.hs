@@ -14,8 +14,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GADTs #-}
 
-import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound)
-import qualified Prelude as P
+import Prelude hiding (Monoid (..),(-),(+),negate,(==),minBound, Semigroup(..))
+import qualified Prelude as P 
 
 import Homoiconic.Heterogeneous
 
