@@ -23,11 +23,11 @@ module Homoiconic.Homogeneous
     (
 
     -- * FAlgebra
-      FAlgebra (..)
-    , Free (..)
+      FAlgebra(..)
+    , Free(..)
     , AST
     , runAST
-    , View (..)
+    , View(..)
 
     -- ** Variables
     , Var
@@ -38,20 +38,19 @@ module Homoiconic.Homogeneous
 
     -- ** Template Haskell
     , mkFAlgebra
-
     )
-    where
+where
 
-import Homoiconic.Homogeneous.TH
+import           Homoiconic.Homogeneous.TH
 
-import Prelude
-import Control.Monad
-import Data.List
-import Data.Foldable
-import Data.Typeable
+import           Prelude
+import           Control.Monad
+import           Data.List
+import           Data.Foldable
+import           Data.Typeable
 
-import Data.Kind
-import GHC.Exts hiding (IsList(..))
+import           Data.Kind
+import           GHC.Exts                hiding ( IsList(..) )
 
 --------------------------------------------------------------------------------
 
@@ -91,14 +90,14 @@ type family Remove x xs where
 ----------------------------------------
 
 data Free (f :: Type -> Type) (a :: Type) where
-    Free :: f (Free f a) -> Free f a
-    Pure :: a -> Free f a
+    Free ::f (Free f a) -> Free f a
+    Pure ::a -> Free f a
 
 deriving instance (Eq a, Eq (f (Free f a))) => Eq (Free f a)
 
 instance (Show a, Show (f (Free f a))) => Show (Free f a) where
     show (Pure a) = show a
-    show (Free f) = "("++show f++")"
+    show (Free f) = "(" ++ show f ++ ")"
 
 instance Functor f => Functor (Free f) where
     fmap g (Free f) = Free (fmap (fmap g) f)
@@ -106,7 +105,7 @@ instance Functor f => Functor (Free f) where
 
 instance (Functor f, Foldable f) => Foldable (Free f) where
     foldMap f (Free fa) = fold $ fmap (foldMap f) fa
-    foldMap f (Pure  a) = f a
+    foldMap f (Pure a ) = f a
 
 type AST (alg :: Type -> Constraint) a = Free (Sig alg) a
 
@@ -120,7 +119,7 @@ class (FAlgebra alg1, FAlgebra alg2) => View alg1 alg2 where
     unsafeExtractSig :: Sig alg2 a -> Sig alg1 a
 
 instance FAlgebra alg => View alg alg where
-    embedSig = id
+    embedSig         = id
     unsafeExtractSig = id
 
 embedHomAST :: View alg1 alg2 => AST alg1 a -> AST alg2 a
