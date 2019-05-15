@@ -132,7 +132,7 @@ mkFAlgebra algName = do
             ]
 
     -- deriving instance (Eq a) => Eq (Sig alg a)
-    let instEqSig = StandaloneDerivD
+    let instEqSig = StandaloneDerivD Nothing
             [ AppT
                 ( ConT $ mkName "Eq" )
                 ( VarT $ mkName "a" )
@@ -582,4 +582,4 @@ mkFAlgebra algName = do
 #endif
 
     -- return the instances
-    return $ [instFAlgebra,instEqSig,instFunctor,instFoldable,instShow,instHomFree] ++ instHomViews ++ patSyns
+    return $ [instFAlgebra, instEqSig,instFunctor,instFoldable,instShow,instHomFree] ++ instHomViews ++ patSyns

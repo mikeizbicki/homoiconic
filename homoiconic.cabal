@@ -63,7 +63,7 @@ library
         DataKinds
 
     build-depends:
-        base >= 4.9 && < 4.10,
+        base >= 4.9 && < 5,
         template-haskell
 
     ghc-options:
